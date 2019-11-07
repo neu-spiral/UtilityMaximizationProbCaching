@@ -1133,11 +1133,55 @@ class Problem:
         
        
         self.capacities = capacities
-        self.EDGE = bandwidths
-        Demand_list =[]
+        self.bandwidths = bandwidths
         self.demands = demands
     def utility(self,x):
         return -x/(1.-x)
+    def genDep(self):
+        edge2vars_dep = {}
+        edge2rem_dep = {}
+        for demand in self.demands:
+            item = demand['item']
+            rate = demand['rate']
+            path = tuple(demand['path'])
+            for node_i in range(len(path)-1):
+                edge = (path[node_i],path[node_i+1])
+                if edge not in edge2rem_dep:
+                    edge2rem_dep[edge] = set([(item,path,rate)])
+                else:
+                    edge2rem_dep[edge].update(set([(item,path,rate)]))
+                if edge not in edge2vars_dep:
+                    edge2vars_dep[edge] = set([(item, node_i)])
+                else:
+                    edge2vars_dep[edge].update(set([(item, node_i)]))
+        return edge2vars_dep, edge2rem_dep
+    
+                
+    def eval_constrint(self, edge, edge2vars_dep, edge2rem_dep, rem , var):
+        cnst = self.bandwidth[edge]
+        sumSoFar = 0.0
+        for (item, path, maxRate) in edge2rem_dep:
+            prod_ip = maxRate - rem[(item, path, maxRate)]
+            for node_i in path:
+                prod_ip *= (1.0-var[(item, node_i)])
+            sumSoFar += prod_ip
+        return cnst - sumSoFar
+        
+                          
+    def getVars(self):
+        r_ip = {}
+        x_iv = {}
+        for demand in self.demands:
+       	    item = demand['item']
+            rate = demand['rate']
+            path = tuple(demand['path'])
+            r_ip[(item, path)] = 0.0
+            for node_i in range(len(path)-1):
+                if (item, node_i) not in x_iv:
+                    x_iv[(item, node_i)]  = 0.0
+
+                
+        
     def pickle_cls(self,fname):
         f = open(fname,'w')
         pickle.dump(self, f)
@@ -1150,7 +1194,7 @@ class Problem:
 
 
 
-def generate_bandwidths(edge_dict,demands,V,I,mode='bi'):
+def generate_bandwidths_old(edge_dict,demands,V,I,mode='bi'):
     EDGE_mu = {}
     X = matrix(0,(V,I))
     rho_uv = ro_uv(edge_dict,demands ,X)
@@ -1200,6 +1244,22 @@ def ro_uv(edge_dict,demands ,X):
                      break
 
     return ro_uv    
+def generate_bandwidths(demands, margin=0.95):
+    '''Given the demands generate bandwidths per edge, s.t., they are margin times the sum of max rates over an edge.'''
+    total_rate = {}
+    for demand in demands:
+        path = demand['path']
+        item = demand['item']
+        rate = demand['rate']
+        for node_i in range(len(path)-1):
+            edge = (path[node_i],path[node_i+1])
+            if edge not in total_rate:
+                 total_rate[edge] = rate
+            else:
+                 total_rate[edge] += rate
+    bandwidths = dict( [(edge, total_rate[edge] * margin) for edge in total_rate] )
+    return bandwidths
+        
 def main():
    #logging.basicConfig(filename='execution.log', filemode='w', level=logging.INFO) 
 
@@ -1208,7 +1268,6 @@ def main():
    parser.add_argument('--max_capacity',default=2,type=int, help='Maximum capacity per cache')
    parser.add_argument('--min_capacity',default=2,type=int, help='Minimum capacity per cache')
    parser.add_argument('--max_rate',default=1.0,type=float, help='Maximum demand rate')
-   parser.add_argument('--min_rate',default=1.0,type=float, help='Minimum demand rate')
    parser.add_argument('--catalog_size',default=100,type=int, help='Catalog size')
    parser.add_argument('--demand_size',default=1000,type=int, help='Demand size')
    parser.add_argument('--demand_change_rate',default=0.0,type=float, help='Demand change rate')
@@ -1229,6 +1288,7 @@ def main():
    parser.add_argument('--beta',default=1.0,type=float,help='beta used in EWMA')
    parser.add_argument('--gamma',default=0.1,type=float,help='gamma used in LMIN')
    parser.add_argument('--expon',default=0.5,type=float,help='exponent used in LMIN')
+   parser.add_argument('--congestion',default=0.95,type=float,help='Number in [0,1] shows th ratio of each edge`s bandwidth to the maximum rates for demands passing over an edge') 
    parser.add_argument('--T',default=5.,type=float,help='Suffling period used in LMIN')
    args = parser.parse_args()
    	
@@ -1323,7 +1383,7 @@ def main():
    construct_stats['graph_size'] = graph_size
    construct_stats['edge_size'] = edge_size
    logging.info('Generating item sources...')
-   item_sources = dict( (item,[G.nodes()[source]]) for item,source in zip(range(args.catalog_size),np.random.choice(range(graph_size),args.catalog_size)) )
+   item_sources = dict( (item,[list(G.nodes)[source]]) for item,source in zip(range(args.catalog_size),np.random.choice(range(graph_size),args.catalog_size)) )
    logging.info('...done. Generated %d sources'%len(item_sources))
    logging.debug('Generated sources:')
    for item in item_sources:
@@ -1332,7 +1392,9 @@ def main():
    construct_stats['sources'] = len(item_sources)
 
    logging.info('Generating query node list...')
-   query_node_list = [ G.nodes()[i] for i  in random.sample(xrange(graph_size),args.query_nodes)]
+   
+   query_node_list = [ list(G.nodes)[i] for i  in random.sample(xrange(graph_size),args.query_nodes)]
+   
    logging.info('...done. Generated %d query nodes.'%len(query_node_list) )
 
    construct_stats['query_nodes'] = len(query_node_list)
@@ -1360,7 +1422,7 @@ def main():
       if x < remainder:
 	dem = dem+1
 	
-      new_dems = [ Demand(items_requested[pos], shortest_path(G,x,item_sources[   items_requested[pos] ][0],weight='weight'),  random.uniform(args.min_rate,args.max_rate))   for pos in range(len(demands),len(demands)+dem)]
+      new_dems = [ Demand(items_requested[pos], shortest_path(G,x,item_sources[   items_requested[pos] ][0],weight='weight'),  args.max_rate)   for pos in range(len(demands),len(demands)+dem)]
       logging.debug(pp(new_dems))
       demands = demands + new_dems
    
@@ -1385,15 +1447,16 @@ def main():
          item = demand['item']
          dem_items.append(item)
    V,I = (len(capacities),len(dem_items))
-   bandwidths=generate_bandwidths(G.edges(),demands,V,I,mode='bi') 
+   bandwidths = generate_bandwidths(demands, margin=args.congestion) 
    #####P = Problem.unpickle_cls('INPUT_bimodal_200_less_edited/problem_%s_1000demands_300catalog_size_mincap_3maxcap_3_100_%s_rate1.0' %(args.graph_type, args.demand_distribution))
   #### bandwidths = P.EDGE
 
 
    logging.info('Building CacheNetwork')
    logging.info('...done')
-   out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.min_rate) +"_"+ str(args.query_nodes) + "qnodes"
+   out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes"
    pr = Problem(G,capacities,demands,bandwidths)
+   print pr.genDep()
    pr.pickle_cls(out) 
    
 if __name__=="__main__":

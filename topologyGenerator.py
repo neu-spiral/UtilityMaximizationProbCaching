@@ -1163,6 +1163,7 @@ class Problem:
             grads[(item, path)] = 1./ (maxRate - self.VAR[(item,path)] + log_margin)
         return grads, utility_func
     def genDep(self):
+      #* NOT USED  
       #  edge2vars_dep = {}
         edge2rem_dep = {}
         for demand in self.demands:
@@ -1183,6 +1184,7 @@ class Problem:
     
                 
     def evalConstraint(self, edge, edge2rem_dep):
+        #* NOT USED 
         cnst = self.bandwidth[edge]
         sumSoFar = 0.0
         for (item, path, maxRate) in edge2rem_dep[edge]:
@@ -1269,10 +1271,6 @@ class Problem:
         cap_grads.update( edge_grads )
         cap_nodes.update( edge_func ) 
         return cap_grads, cap_nodes
-        
-        
-                          
-
                 
         
     def pickle_cls(self,fname):
@@ -1283,6 +1281,9 @@ class Problem:
     def unpickle_cls(fname):
         with file(fname,'r') as f:
             return pickle.load(f)    
+class RelaxedProblem(Problem):
+    def evalFullConstraintsGrad(self):
+        pass
         
 
 

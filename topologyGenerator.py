@@ -1136,16 +1136,18 @@ class Problem:
         #Create caching and utility reminder variables, i.e., VAR and REM, respectively, and initizlie them to 0
         self.REM = {}
         self.VAR = {}
-        self.MAXRATE = {}
+        self.BOX = {}
         for demand in self.demands:
             item = demand['item']
             maxRate = demand['rate']
             path = tuple(demand['path'])
             self.REM[(item, path)] = 0.0
-            self.MAXRATE[(item ,path)] = maxRate
+            self.BOX[(item ,path)] = maxRate
             for node in path:
                 if (item, node) not in self.VAR:
                     self.VAR[(item, node)]  = 0.0
+                    self.BOX[(item, node)]  = 1
+        self.VAR.update( self.REM  ) 
 
 
     def evalGradandUtilities(self):
@@ -1155,8 +1157,10 @@ class Problem:
             item = demand['item']
             maxRate = demand['rate']
             path = tuple(demand['path'])
-            utility_func[(item, path)] = -1.0 * np.log(maxRate - self.REM[(item,path)])
-            grads[(item, path)] = 1./ (maxRate - self.REM[(item,path)])
+            #*
+            log_margin  = 1.e-1
+            utility_func[(item, path)] = -1.0 * np.log(maxRate - self.VAR[(item,path)] + log_margin)
+            grads[(item, path)] = 1./ (maxRate - self.VAR[(item,path)] + log_margin)
         return grads, utility_func
     def genDep(self):
       #  edge2vars_dep = {}
@@ -1195,9 +1199,20 @@ class Problem:
             item = demand['item']
             maxRate = demand['rate']
             path = tuple(demand['path']) 
-            current_prod = maxRate - self.REM[(item, path)]
+            zero_literals = []
+            current_prod = maxRate - self.VAR[(item, path)]
+            if  maxRate - self.VAR[(item, path)] <= 0.0:
+                zero_literals.append( (item, path) )
+                current_prod_no_zero_literals  = 1.0
+            else:
+                current_prod_no_zero_literals = current_prod
             for i in range(len(path)-1):
                 edge = (path[i],path[i+1])
+     
+                if 1.0 - self.VAR[(item, path[i])] <= 0.0:
+                    zero_literals.append( (item, path[i]) )
+                else:
+                    current_prod_no_zero_literals *= (1.0 - self.VAR[(item, path[i])])
                 current_prod *=  (1.0 - self.VAR[(item, path[i])])
 
 
@@ -1212,18 +1227,33 @@ class Problem:
 
 
                 for j in range(i+1):
+                    try:
+                        current_grad_j = current_prod / (1.0 -   self.VAR[(item, path[j])])
+                    except ZeroDivisionError:
+                        if len(zero_literals) > 1:
+                            current_grad_j = 0.0
+                        else:
+                            current_grad_j = current_prod_no_zero_literals
                     if (item, path[j]) not in grads[edge]:
-                         grads[edge][(item, path[j])] = current_prod / (1.0 -   self.VAR[(item, path[j])])
+                         grads[edge][(item, path[j])] = current_grad_j
                     else:
-                         grads[edge][(item, path[j])] += current_prod / (1.0 -   self.VAR[(item, path[j])]) 
+                         grads[edge][(item, path[j])] += current_grad_j
             
-                
-                grads[edge][(item, path)] = current_prod / (maxRate - self.REM[(item, path)]) 
+                try:
+                    current_grad_j = current_prod / (maxRate - self.VAR[(item, path)])
+                except ZeroDivisionError:
+                    if len(zero_literals) > 1:
+                      current_grad_j = 0.0
+                    else:
+                      current_grad_j = current_prod_no_zero_literals 
+                grads[edge][(item, path)] = current_grad_j
         return grads, edge_func
     def evalGradandCapcityConstraints(self):
         grads = {}
         cap_nodes = {}
         for (item, node) in self.VAR:
+             if type(node) == tuple:
+                 continue 
              if node not in cap_nodes:
                  cap_nodes[node] =  self.capacities[node]
              if node not in grads:
@@ -1518,14 +1548,14 @@ def main():
    logging.info('...done')
    out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes"
    pr = Problem(G,capacities,demands,bandwidths)
- #  print 'Demands are: ', pr.demands
- #  print 'bandwidths are : ', pr.bandwidths
- #  print 'Capacities are : ', pr.capacities 
- #  print 'VARS and REM are : ', pr.VAR, pr.REM
- #  print 'Constraint grads are : ', pr.evalGradandConstraints()
- #  print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
- #  print 'Full Grads are: ', pr.evalFullConstraintsGrad()
-   pr.pickle_cls(out) 
+   pr.pickle_cls(out)
+   print 'Demands are: ', pr.demands
+   print 'bandwidths are : ', pr.bandwidths
+   print 'Capacities are : ', pr.capacities 
+   print 'VARS and REM are : ', pr.VAR
+   print 'Constraint grads are : ', pr.evalGradandConstraints()
+   print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
+   print 'Full Grads are: ', pr.evalFullConstraintsGrad()
    
    
 if __name__=="__main__":

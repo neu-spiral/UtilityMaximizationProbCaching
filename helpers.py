@@ -21,6 +21,10 @@ def ProjOperator(X, V, U):
     for key in XminusV:
         P_dict[key] = X[key] - XminusV[key] 
     return P_dict
+def clearFile(file):
+    "Delete all contents of a file"	
+    with open(file,'w') as f:
+   	f.write("")
 
 def squaredNorm(X):
     'Compute the ell_2 norm for a dict'

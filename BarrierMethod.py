@@ -1,4 +1,5 @@
-from helpers import Project2Box, ProjOperator, squaredNorm
+from helpers import Project2Box, ProjOperator, squaredNorm, clearFile
+import logging 
 import random
 from topologyGenerator import Problem 
 import numpy as np
@@ -6,7 +7,7 @@ import argparse
 
 
 class BarrierOptimizer():
-    def __init__(self, Pr):
+    def __init__(self, Pr, logger=None):
         #initialize algorithm parameters 
         initVal = 0.5
         self.eta_s = initVal
@@ -26,74 +27,61 @@ class BarrierOptimizer():
         #Initialize the dual variables LAMBDAS
         constraint_grads, constraint_func = Pr.evalFullConstraintsGrad()
         self.LAMBDAS = {}
+        #* eps
+        eps_margin = 1.e-1
         for constraint in constraint_func:
             if constraint_func[constraint] > 0:
-                self.LAMBDAS[constraint] = 1.e-1
+                self.LAMBDAS[constraint] =  (eps_margin / self.MU) ** (1./self.alpha_lambda) 
             else:
-                self.LAMBDAS[constraint] = (-1.0 * constraint_func[constraint] / self.MU) ** (1./self.alpha_lambda) + 1.e-1
+                self.LAMBDAS[constraint] = ( (-1.0 * constraint_func[constraint] + eps_margin) / self.MU) ** (1./self.alpha_lambda) 
 
         self.LAMBDA_BAR = self.LAMBDAS
+        #logger
+        self.logger = logger
            
 
 
     def PGD(self, Pr, iterations=100):
         #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 
-        self.grad_Psi_VAR  = dict( [(key, 0.0) for key in Pr.VAR] )
-        self.grad_Psi_REM  = dict( [(key, 0.0) for key in Pr.REM] )
+        self.grad_Psi_VAR  = {}
         for t in range(iterations):
             #* step_size can be computed in other ways 
             step_size = 1./(t+2)
 
-            #Reset the gradientes to zero
-            for key in self.grad_Psi_VAR:
+            #Set/Reset the gradientes to zero
+            for key in Pr.VAR:
                 self.grad_Psi_VAR[key] = 0.0
-            for key in self.grad_Psi_REM:
-                self.grad_Psi_REM[key] = 0.0
-            OLDVAR = Pr.VAR
-            OLDREM = Pr.REM
              
             #Gradient descent step 
             #w.r.t. constraints
             constraint_grads, constraint_func = Pr.evalFullConstraintsGrad()
+            #w.r.t. objective 
+            obj_grads, obj_func = Pr.evalGradandUtilities()
        
             for constraint in constraint_grads:
                 self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
                 for index in constraint_grads[constraint]:
                     grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index] 
+                    Pr.VAR[index] -= step_size * grad_index
+                    self.grad_Psi_VAR[index] += grad_index 
 
-
-                    # find whether index is a cahing variable or a utility remainder
-                    try:
-                        Pr.VAR[index] -= step_size * grad_index
-                        self.grad_Psi_VAR[index] += grad_index 
-                    except KeyError: 
-                        print index, grad_index
-                        Pr.REM[index] -= step_size * grad_index
-                        self.grad_Psi_REM[index] += grad_index
-            #w.r.t. objective 
-            obj_grads, obj_func = Pr.evalGradandUtilities() 
             for index in obj_grads:
-                print index, grad_index
-                Pr.REM[index] -= step_size * obj_grads[index]
-                self.grad_Psi_REM[index] += obj_grads[index]
+                Pr.VAR[index] -= step_size * obj_grads[index]
+                self.grad_Psi_VAR[index] += obj_grads[index]
 
-            print Pr.REM
             #Projections 
-            Project2Box(Pr.VAR, dict( [(var, 1) for var in Pr.VAR] ) )
-            Project2Box(Pr.REM, Pr.MAXRATE)
+            Project2Box(Pr.VAR, Pr.BOX)
 
             #Report stats and objective
             OldObj =  sum( obj_func.values() ) 
-            print Pr.REM
             for  constraint in constraint_func:
                 OldObj -=  self.LAMBDAS[constraint] * self.SHIFTS[constraint] * np.log(constraint_func[constraint] + self.SHIFTS[constraint])
-            print("ITERATION %d, current objective value is %f" %(t, OldObj))
+            self.logger.info("INNER ITERATION %d, current objective value is %f" %(t, OldObj))
 
             #Optimiality
-            non_optimality_VAR = ProjOperator(OLDVAR, self.grad_Psi_VAR, dict( [(var, 1) for var in Pr.VAR] ))
-            non_optimality_REM = ProjOperator(OLDREM, self.grad_Psi_REM, Pr.MAXRATE) 
-            non_optimality_norm = np.sqrt(squaredNorm(non_optimality_VAR)**2 + squaredNorm(non_optimality_REM)**2)
-            print("ITERATION %d, current non-optimality is %f" %(t, non_optimality_norm)) 
+            non_optimality_VAR = ProjOperator(Pr.VAR, self.grad_Psi_VAR, Pr.BOX)
+            non_optimality_norm = squaredNorm( non_optimality_VAR ) 
+            self.logger.info("INNER ITERATION %d, current non-optimality is %f" %(t, non_optimality_norm)) 
             if non_optimality_norm<self.OMEGA:
                 break
         return constraint_func, non_optimality_norm   
@@ -122,16 +110,25 @@ class BarrierOptimizer():
                 self.OMEGA = self.omega_s * self.MU ** self.alpha_omega
                 self.ETA = self.eta_s * self.MU ** self.alpha_eta
 
+            self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
+            
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('--iterations',default=100,type=int, help='Number of iterations') 
+    parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
+    parser.add_argument('--logLevel',default='INFO', help='Verbosity level',choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'])
     args = parser.parse_args()
 
     
     problem_instance = Problem.unpickle_cls(args.problem) 
     ##Debugging
 
+
+    #Random variables for vraiables
+    for key in problem_instance.VAR:
+         problem_instance.VAR[key] = 1.0
     #The gradient computation 
     eps = 1.e-3
     #Eval grads and functions 
@@ -141,21 +138,25 @@ if __name__=="__main__":
         const = random.choice( constraint_grads.keys() )
         index  = random.choice( constraint_grads[const].keys() )
         print "The computed gradient of constraint ",const, " w.r.t. ", index, " is ", constraint_grads[const][index] 
-        try:
-            problem_instance.VAR[index] += eps
-        except KeyError:
-            problem_instance.REM[index] += eps
+        problem_instance.VAR[index] += eps
 
         constraint_grads_eps, constraint_func_eps = problem_instance.evalFullConstraintsGrad()
         print "The emperical gradient of constraint ", const,  " w.r.t. ", index, " is ", (constraint_func_eps[const] - constraint_func[const])/eps
 
-        try:
-            problem_instance.VAR[index] -= eps
-        except KeyError:
-            problem_instance.REM[index] -= eps
+        problem_instance.VAR[index] -= eps
        
-    optimizer = BarrierOptimizer(problem_instance)
-    optimizer.outerIter(problem_instance, 1, 100)
+    #set up logfile
+    logger = logging.getLogger('Shifted Barrier Method')
+    logger.setLevel(eval("logging."+args.logLevel)) 
+    clearFile(args.logfile)
+    fh = logging.FileHandler(args.logfile)
+    fh.setLevel(eval("logging."+args.logLevel))
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(fh)
+    
+
+    optimizer = BarrierOptimizer(problem_instance, logger)
+    optimizer.outerIter(problem_instance, 10, 100)
     
     
         

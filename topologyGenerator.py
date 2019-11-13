@@ -1136,11 +1136,13 @@ class Problem:
         #Create caching and utility reminder variables, i.e., VAR and REM, respectively, and initizlie them to 0
         self.REM = {}
         self.VAR = {}
+        self.MAXRATE = {}
         for demand in self.demands:
             item = demand['item']
             maxRate = demand['rate']
             path = tuple(demand['path'])
             self.REM[(item, path)] = 0.0
+            self.MAXRATE[(item ,path)] = maxRate
             for node in path:
                 if (item, node) not in self.VAR:
                     self.VAR[(item, node)]  = 0.0
@@ -1215,7 +1217,8 @@ class Problem:
                     else:
                          grads[edge][(item, path[j])] += current_prod / (1.0 -   self.VAR[(item, path[j])]) 
             
-            grads[edge][(item, path)] = current_prod / (maxRate - self.REM[(item, path)]) 
+                
+                grads[edge][(item, path)] = current_prod / (maxRate - self.REM[(item, path)]) 
         return grads, edge_func
     def evalGradandCapcityConstraints(self):
         grads = {}
@@ -1228,6 +1231,14 @@ class Problem:
              grads[node][(item, node)] = -1.0
              cap_nodes[node] -= self.VAR[(item, node)]
         return grads, cap_nodes
+    def evalFullConstraintsGrad(self):
+        cap_grads, cap_nodes = self.evalGradandCapcityConstraints()
+        edge_grads, edge_func = self.evalGradandConstraints()
+
+        #Merge
+        cap_grads.update( edge_grads )
+        cap_nodes.update( edge_func ) 
+        return cap_grads, cap_nodes
         
         
                           
@@ -1501,18 +1512,21 @@ def main():
          dem_items.append(item)
    V,I = (len(capacities),len(dem_items))
    bandwidths = generate_bandwidths(demands, margin=args.congestion) 
-   #####P = Problem.unpickle_cls('INPUT_bimodal_200_less_edited/problem_%s_1000demands_300catalog_size_mincap_3maxcap_3_100_%s_rate1.0' %(args.graph_type, args.demand_distribution))
-  #### bandwidths = P.EDGE
 
 
    logging.info('Building CacheNetwork')
    logging.info('...done')
    out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes"
    pr = Problem(G,capacities,demands,bandwidths)
-   print 'Demands are: ', pr.demands
-   print 'bandwidths are :', pr.bandwidths
-   print 'Grads are:', pr.evalConstraintsGrad()
+ #  print 'Demands are: ', pr.demands
+ #  print 'bandwidths are : ', pr.bandwidths
+ #  print 'Capacities are : ', pr.capacities 
+ #  print 'VARS and REM are : ', pr.VAR, pr.REM
+ #  print 'Constraint grads are : ', pr.evalGradandConstraints()
+ #  print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
+ #  print 'Full Grads are: ', pr.evalFullConstraintsGrad()
    pr.pickle_cls(out) 
+   
    
 if __name__=="__main__":
    main()

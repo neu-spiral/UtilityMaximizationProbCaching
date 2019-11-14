@@ -18,8 +18,8 @@ class BarrierOptimizer():
         self.alpha_lambda = initVal
         self.tau = 0.5
         self.rho = 0.5
-        self.omega_star = 1.e-4
-        self.eta_star = 1.e-4
+        self.omega_star = 1.e-10
+        self.eta_star = 1.e-10
         self.alpha_eta = 1.1 - 1./(1+ self.alpha_lambda)
         self.MU = initVal
         self.OMEGA  = self.omega_s * self.MU**self.alpha_omega 
@@ -116,7 +116,9 @@ class BarrierOptimizer():
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
-    parser.add_argument('--iterations',default=100,type=int, help='Number of iterations') 
+    parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
+    parser.add_argument('--innerIterations',default=100,type=int, help='Number of inner iterations') 
+    parser.add_argument('--outerIterations',default=100,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
     parser.add_argument('--logLevel',default='INFO', help='Verbosity level',choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'])
     args = parser.parse_args()
@@ -156,7 +158,9 @@ if __name__=="__main__":
     
 
     optimizer = BarrierOptimizer(problem_instance, logger)
-    optimizer.outerIter(problem_instance, 10, 100)
+    optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations)
+    problem_instance.pickle_cls( args.opt_problem )
+    print problem_instance.VAR
     
     
         

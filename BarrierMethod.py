@@ -5,6 +5,44 @@ from topologyGenerator import Problem
 import numpy as np
 import argparse
 
+class boxOptimizer():
+    def __init__(self):
+        self.mu = 0.5
+        self.eta  = 0.6
+        self.gamma0 = 0.3
+        self.gamma1  = 0.7
+        self.gamma2  = 2.0
+    def initialPoint(self, Pr, startFromLast=False):
+        if startFromLast:
+            return 
+        for key in Pr.VAR:
+            if type(key[1]) == tuple:
+                 #Remainder variables 
+                Pr.VAR[key] = Pr.BOX[key]
+            else:
+                 #Caching variables 
+                Pr.VAR[key] = 0.0
+    def findCauchyPoint(self, Pr):
+        #Find t_i s
+ 
+        #Calculate coefficiantas of the quadratic functions. 
+
+        #Find the first local minimum
+        
+        #Return t_C
+    def Optimizer(self, Pr):
+        ####LOOP
+        #call t_c = findCauchyPoint
+
+        #find x_k + s_k and evaluate the function
+
+        #Do the tests and updates 
+
+        #stop if \|S_k\| is small enough 
+          
+        
+    
+
 
 class BarrierOptimizer():
     def __init__(self, Pr, logger=None):
@@ -44,6 +82,20 @@ class BarrierOptimizer():
     def PGD(self, Pr, iterations=100):
         #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 
         self.grad_Psi_VAR  = {}
+        #Set the initial point, s.t., the constints functions are maximized 
+        #for key in Pr.VAR:
+        #     if type(key[1]) == tuple:
+                 #Remainder variables 
+        #         Pr.VAR[key] = Pr.BOX[key]
+        #     else:
+                 #Caching variables 
+        #         Pr.VAR[key] = 0.0
+
+        #Gradient descent step 
+        #w.r.t. constraints
+       # constraint_grads, constraint_func = Pr.evalFullConstraintsGrad()
+        #w.r.t. objective 
+       # obj_grads, obj_func = Pr.evalGradandUtilities()
         for t in range(iterations):
             #* step_size can be computed in other ways 
             step_size = 1./(t+2)
@@ -73,16 +125,19 @@ class BarrierOptimizer():
             Project2Box(Pr.VAR, Pr.BOX)
 
             #Report stats and objective
-            OldObj =  sum( obj_func.values() ) 
-            for  constraint in constraint_func:
-                OldObj -=  self.LAMBDAS[constraint] * self.SHIFTS[constraint] * np.log(constraint_func[constraint] + self.SHIFTS[constraint])
-            self.logger.info("INNER ITERATION %d, current objective value is %f" %(t, OldObj))
+      #      OldObj =  sum( obj_func.values() ) 
+      #      for  constraint in constraint_func:
+      #          OldObj -=  self.LAMBDAS[constraint] * self.SHIFTS[constraint] * np.log(constraint_func[constraint] + self.SHIFTS[constraint])
+      #      self.logger.info("INNER ITERATION %d, current objective value is %f" %(t, OldObj))
 
             #Optimiality
             non_optimality_VAR = ProjOperator(Pr.VAR, self.grad_Psi_VAR, Pr.BOX)
             non_optimality_norm = squaredNorm( non_optimality_VAR ) 
-            self.logger.info("INNER ITERATION %d, current non-optimality is %f" %(t, non_optimality_norm)) 
-            if non_optimality_norm<self.OMEGA:
+            self.logger.info("INNER ITERATION %d, current non-optimality is %f." %(t, non_optimality_norm)) 
+
+            print [constraint_func[constraint] + self.SHIFTS[constraint]  for constraint in self.SHIFTS]
+
+            if non_optimality_norm<self.OMEGA:# and np.prod( [constraint_func[constraint] + self.SHIFTS[constraint] >= 0 for constraint in self.SHIFTS] ):
                 break
         return constraint_func, non_optimality_norm   
         
@@ -90,6 +145,7 @@ class BarrierOptimizer():
        
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
+            print self.SHIFTS
             #Inner iteration
             constraint_func, non_optimality_norm = self.PGD(Pr, iterations = InnerIterations)
         
@@ -127,25 +183,24 @@ if __name__=="__main__":
     problem_instance = Problem.unpickle_cls(args.problem) 
     ##Debugging
 
-
-    #Random variables for vraiables
     for key in problem_instance.VAR:
-         problem_instance.VAR[key] = 1.0
+        problem_instance.VAR[key] = 0.58
+
     #The gradient computation 
     eps = 1.e-3
     #Eval grads and functions 
-    constraint_grads, constraint_func = problem_instance.evalFullConstraintsGrad()
-    for i in range(0):
+#    constraint_grads, constraint_func = problem_instance.evalFullConstraintsGrad()
+#    for i in range(0):
         #Pick random constraints and variables
-        const = random.choice( constraint_grads.keys() )
-        index  = random.choice( constraint_grads[const].keys() )
-        print "The computed gradient of constraint ",const, " w.r.t. ", index, " is ", constraint_grads[const][index] 
-        problem_instance.VAR[index] += eps
+#        const = random.choice( constraint_grads.keys() )
+#        index  = random.choice( constraint_grads[const].keys() )
+#        print "The computed gradient of constraint ",const, " w.r.t. ", index, " is ", constraint_grads[const][index] 
+#        problem_instance.VAR[index] += eps
 
-        constraint_grads_eps, constraint_func_eps = problem_instance.evalFullConstraintsGrad()
-        print "The emperical gradient of constraint ", const,  " w.r.t. ", index, " is ", (constraint_func_eps[const] - constraint_func[const])/eps
+ #       constraint_grads_eps, constraint_func_eps = problem_instance.evalFullConstraintsGrad()
+ #       print "The emperical gradient of constraint ", const,  " w.r.t. ", index, " is ", (constraint_func_eps[const] - constraint_func[const])/eps
 
-        problem_instance.VAR[index] -= eps
+ #       problem_instance.VAR[index] -= eps
        
     #set up logfile
     logger = logging.getLogger('Shifted Barrier Method')
@@ -155,12 +210,12 @@ if __name__=="__main__":
     fh.setLevel(eval("logging."+args.logLevel))
     fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(fh)
-    
+   
 
     optimizer = BarrierOptimizer(problem_instance, logger)
     optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations)
     problem_instance.pickle_cls( args.opt_problem )
-    print problem_instance.VAR
+    print  problem_instance.VAR
     
     
         

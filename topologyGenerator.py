@@ -1196,6 +1196,7 @@ class Problem:
    
     def evalGradandConstraints(self):
         grads = {}
+        Hessian = {}
         edge_func = {}
         for demand in self.demands:
             item = demand['item']
@@ -1220,6 +1221,9 @@ class Problem:
 
                 if edge not in grads:
                     grads[edge] = {}
+        
+                if edge not in Hessian:
+                    Hessian[edge] = {}
 
 
                 if edge not in edge_func:
@@ -1241,6 +1245,8 @@ class Problem:
                     else:
                          grads[edge][(item, path[j])] += current_grad_j
             
+                        
+                        
                 try:
                     current_grad_j = current_prod / (maxRate - self.VAR[(item, path)])
                 except ZeroDivisionError:
@@ -1249,6 +1255,43 @@ class Problem:
                     else:
                       current_grad_j = current_prod_no_zero_literals 
                 grads[edge][(item, path)] = current_grad_j
+                #*Compute Hessian
+                for j in range(i+1):
+                    for k in range(j+1, i+1):
+                        try:
+                            current_Hessian_j_k = current_prod / ( (1.0 -   self.VAR[(item, path[j])]) *  (1.0 -   self.VAR[(item, path[k])]) )
+                        except ZeroDivisionError:
+                            if len(zero_literals) > 2:
+                                current_Hessian_j_k = 0.0
+                            else:
+                                current_Hessian_j_k = current_prod_no_zero_literals
+                                if  (item, path[j]) not in zero_literals:
+                                    current_Hessian_j_k /= (1.0 - self.VAR[(item, path[j])])
+                                if (item, path[k]) not in zero_literals:
+                                    current_Hessian_j_k /= (1.0 - self.VAR[(item, path[k])])
+        
+                        if ((item, path[j]), (item, path[k])) not in Hessian[edge]:
+                            Hessian[edge][  ((item, path[j]), (item, path[k])) ] = -1.0 * current_Hessian_j_k
+                            Hessian[edge][  ((item, path[k]), (item, path[j])) ] = -1.0 * current_Hessian_j_k
+                        else:
+                            Hessian[edge][  ((item, path[j]), (item, path[k])) ] += -1.0 * current_Hessian_j_k
+                            Hessian[edge][  ((item, path[k]), (item, path[j])) ] += -1.0 * current_Hessian_j_k
+                for j in range(i+1):
+                    try:
+                        current_Hessian_j_r = current_prod / ( (maxRate - self.VAR[(item, path)]) *  (1.0 -   self.VAR[(item, path[j])]) )
+                    except ZeroDivisionError:
+                         if len(zero_literals) > 2:
+                             current_Hessian_j_r = 0.0
+                         else:
+                             if  (item, path[j]) not in zero_literals:
+                                 current_Hessian_j_r /=  (1.0 - self.VAR[(item, path[j])])
+                             if (item, path) not in zero_literals:
+                                 current_Hessian_j_r /= (maxRate - self.VAR[(item, path)])
+                    Hessian[edge][ ( (item, path), (item, path[j])) ] = -1.0 * current_Hessian_j_r
+                    Hessian[edge][ ( (item, path[j]), (item, path)) ] = -1.0 * current_Hessian_j_r 
+          
+                                
+                                    
         return grads, edge_func
     def evalGradandCapcityConstraints(self):
         grads = {}

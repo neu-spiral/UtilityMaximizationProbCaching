@@ -10,6 +10,9 @@ from SparseVector import SparseVector
 
 class boxOptimizer():
     def __init__(self):
+    """This class is the implmentation of the algrotihm prposed in GLOBAL CONVERGENCE OF A CLASS OF
+        TRUST REGION ALGORITHMS FOR OPTIMIZATION WITH SIMPLE BOUNDS.
+    """
         self.mu = 0.5
         self.eta  = 0.6
         self.gamma0 = 0.3
@@ -29,50 +32,6 @@ class boxOptimizer():
                 Pr.VAR[key] = 0.0
     def optimizer(self, Pr, iterations=100):
         
-        #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 
-        self.grad_VAR  = {}
-        for t in range(iterations):
-
-            #Set/Reset the gradientes to zero
-            for key in Pr.VAR:
-                self.grad_VAR[key] = 0.0
-            
-            #w.r.t. constraints
-            constraint_grads, constraint_func = Pr.evalFullConstraintsGrad()
-            #w.r.t. objective 
-            obj_grads, obj_func = Pr.evalGradandUtilities()
-
-            for constraint in constraint_grads:
-                self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
-                for index in constraint_grads[constraint]:
-                    grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
-                    Pr.VAR[index] -= step_size * grad_index
-                    self.grad_Psi_VAR[index] += grad_index
-
-            for index in obj_grads:
-                Pr.VAR[index] -= step_size * obj_grads[index]
-                self.grad_Psi_VAR[index] += obj_grads[index]
-
-            #Projections 
-            Project2Box(Pr.VAR, Pr.BOX)
-
-            #Report stats and objective
-      #      OldObj =  sum( obj_func.values() ) 
-      #      for  constraint in constraint_func:
-      #          OldObj -=  self.LAMBDAS[constraint] * self.SHIFTS[constraint] * np.log(constraint_func[constraint] + self.SHIFTS[constraint])
-      #      self.logger.info("INNER ITERATION %d, current objective value is %f" %(t, OldObj))
-
-            #Optimiality
-            non_optimality_VAR = ProjOperator(Pr.VAR, self.grad_Psi_VAR, Pr.BOX)
-            non_optimality_norm = squaredNorm( non_optimality_VAR )
-            self.logger.info("INNER ITERATION %d, current non-optimality is %f." %(t, non_optimality_norm))
-
-            print [constraint_func[constraint] + self.SHIFTS[constraint]  for constraint in self.SHIFTS]
-
-            if non_optimality_norm<self.OMEGA:# and np.prod( [constraint_func[constraint] + self.SHIFTS[constraint] >= 0 for constraint in self.SHIFTS] ):
-                break
-        return constraint_func, non_optimality_norm
-
         #while:
         #TrustRegionThreshold = self.Delta * self.nu   
         #s_k = findCauchyPoint(grad, Hessian, Vars, Box, TrustRegionThreshold)
@@ -89,6 +48,8 @@ class boxOptimizer():
         return a, b
       
     def findCauchyPoint(self, grad, Hessian, Vars, Box, TrustRegionThreshold):
+        "Return the direction s_k as in Step 1 of the algorithm. Note that grad and Hessian are SparseVectors."
+        
        #Compute hitting times
         hitting_times = {'dummy':0.0 }
         for key in Vars:
@@ -141,9 +102,10 @@ class boxOptimizer():
                # break
 
 
-            #Find the first local minimum, which happens in two cases
+            #Find the first local minimum of the piece-wise quadratic function a * t**2 + b * t
+            # this happens in two cases
             # (a) if the quadratic function is convex and its peak is in the interval [t_key, next_t_key]
-            # (b) if the quadratic function  was decreasing in the last interval and is increasing now. 
+            # (b) if the quadratic function was decreasing in the last interval and it is increasing now. 
             # check (a)
             if a > 0.0 and -1.0 * b /(2 * a) > t_key and -1.0 * b /(2 * a) < next_t_key:
                 t_C_k = -1.0 * b /(2 * a)
@@ -231,6 +193,25 @@ class BarrierOptimizer():
            
 
 
+    def evalBarrierObjectivesGradsHessian(self, Pr):
+        grad_barrier  = {}
+        #Set/Reset the gradientes to zero
+        for key in Pr.VAR:
+            grad_barrier[key] = 0.0
+        #w.r.t. constraints
+        constraint_grads, constraint_func, constraint_Hessian = Pr.evalFullConstraintsGrad()
+        #w.r.t. objective 
+        obj_grads, obj_func, obj_Hessian = Pr.evalGradandUtilities()
+        for constraint in constraint_grads:
+            self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
+            for index in constraint_grads[constraint]:
+                grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
+                #Pr.VAR[index] -= step_size * grad_index
+                grad_barrier[index] += grad_index
+
+        for index in obj_grads:
+            grad_barrier[index] += obj_grads[index]
+        
     def PGD(self, Pr, iterations=100):
         #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 
         self.grad_Psi_VAR  = {}

@@ -195,9 +195,6 @@ class BarrierOptimizer():
 
     def evalBarrierObjectivesGradsHessian(self, Pr):
         grad_barrier  = {}
-        #Set/Reset the gradientes to zero
-        for key in Pr.VAR:
-            grad_barrier[key] = 0.0
         #w.r.t. constraints
         constraint_grads, constraint_func, constraint_Hessian = Pr.evalFullConstraintsGrad()
         #w.r.t. objective 
@@ -206,11 +203,18 @@ class BarrierOptimizer():
             self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
             for index in constraint_grads[constraint]:
                 grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
-                #Pr.VAR[index] -= step_size * grad_index
-                grad_barrier[index] += grad_index
+                if index in grad_barrier:
+                    grad_barrier[index] += grad_index
+                else:
+                    grad_barrier[index] = grad_index
 
         for index in obj_grads:
-            grad_barrier[index] += obj_grads[index]
+            if index in grad_barrier:
+                grad_barrier[index] += obj_grads[index]
+            else:
+                grad_barrier[index] = obj_grads[index]
+                    
+        
         
     def PGD(self, Pr, iterations=100):
         #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 

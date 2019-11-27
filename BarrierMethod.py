@@ -1,9 +1,12 @@
 from helpers import Project2Box, ProjOperator, squaredNorm, clearFile
 import logging 
 import random
+import math 
+import sys
 from topologyGenerator import Problem 
 import numpy as np
 import argparse
+from SparseVector import SparseVector
 
 class boxOptimizer():
     def __init__(self):
@@ -12,6 +15,8 @@ class boxOptimizer():
         self.gamma0 = 0.3
         self.gamma1  = 0.7
         self.gamma2  = 2.0
+        self.Delta = 0.5
+        self.nu = 1.0
     def initialPoint(self, Pr, startFromLast=False):
         if startFromLast:
             return 
@@ -22,18 +27,165 @@ class boxOptimizer():
             else:
                  #Caching variables 
                 Pr.VAR[key] = 0.0
-    def findCauchyPoint(self, Pr):
-        #Find t_i s
- 
-        #Calculate coefficiantas of the quadratic functions. 
-
-        #Find the first local minimum
+    def optimizer(self, Pr, iterations=100):
         
-        #Return t_C
-    def Optimizer(self, Pr):
-        ####LOOP
-        #call t_c = findCauchyPoint
+        #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 
+        self.grad_VAR  = {}
+        for t in range(iterations):
 
+            #Set/Reset the gradientes to zero
+            for key in Pr.VAR:
+                self.grad_VAR[key] = 0.0
+            
+            #w.r.t. constraints
+            constraint_grads, constraint_func = Pr.evalFullConstraintsGrad()
+            #w.r.t. objective 
+            obj_grads, obj_func = Pr.evalGradandUtilities()
+
+            for constraint in constraint_grads:
+                self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
+                for index in constraint_grads[constraint]:
+                    grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
+                    Pr.VAR[index] -= step_size * grad_index
+                    self.grad_Psi_VAR[index] += grad_index
+
+            for index in obj_grads:
+                Pr.VAR[index] -= step_size * obj_grads[index]
+                self.grad_Psi_VAR[index] += obj_grads[index]
+
+            #Projections 
+            Project2Box(Pr.VAR, Pr.BOX)
+
+            #Report stats and objective
+      #      OldObj =  sum( obj_func.values() ) 
+      #      for  constraint in constraint_func:
+      #          OldObj -=  self.LAMBDAS[constraint] * self.SHIFTS[constraint] * np.log(constraint_func[constraint] + self.SHIFTS[constraint])
+      #      self.logger.info("INNER ITERATION %d, current objective value is %f" %(t, OldObj))
+
+            #Optimiality
+            non_optimality_VAR = ProjOperator(Pr.VAR, self.grad_Psi_VAR, Pr.BOX)
+            non_optimality_norm = squaredNorm( non_optimality_VAR )
+            self.logger.info("INNER ITERATION %d, current non-optimality is %f." %(t, non_optimality_norm))
+
+            print [constraint_func[constraint] + self.SHIFTS[constraint]  for constraint in self.SHIFTS]
+
+            if non_optimality_norm<self.OMEGA:# and np.prod( [constraint_func[constraint] + self.SHIFTS[constraint] >= 0 for constraint in self.SHIFTS] ):
+                break
+        return constraint_func, non_optimality_norm
+
+        #while:
+        #TrustRegionThreshold = self.Delta * self.nu   
+        #s_k = findCauchyPoint(grad, Hessian, Vars, Box, TrustRegionThreshold)
+        #m = 
+        #rho = (f(x_k) - f(x_k+s_k)) / (f(x_k) - )
+        # if rho > mu
+        
+        #else 
+
+        
+    def _getQudraticQuoeff(self, S_independant_k, S_dependant_k, grad, Hessian):
+        b = S_dependant_k.dot(grad) + S_dependant_k.dot( S_independant_k.MatMul( Hessian)  )
+        a = 0.5 * S_dependant_k.dot( S_dependant_k.MatMul( Hessian)  ) 
+        return a, b
+      
+    def findCauchyPoint(self, grad, Hessian, Vars, Box, TrustRegionThreshold):
+       #Compute hitting times
+        hitting_times = {'dummy':0.0 }
+        for key in Vars:
+            if grad[key] == 0.0:
+               hitting_times[key] = 0.0 
+            elif grad[key] > 0:
+                hitting_times[key] = Vars[key] / grad[key]
+            else grad[key] < 0:
+                hitting_times[key] = (Box[key] - Vars[key]) / abs( grad[key] )
+        
+        sorted_hitting_times_items = sorted(hitting_times.items(), key = lambda x: x[1])
+       #Decompose S_k = S_independant_k + S_dependant_k * t
+        S_independant_k = SparseVector({})
+        S_dependant_k = SparseVector( dict([(key, -1.0 * grad[key]) for key in grad]) )
+        end_deriavative_sgn = 0
+        t_threshold = sys.maxsize
+        for i in len( sorted_hitting_times_items ):
+            key, t_key = sorted_hitting_times_items[i]
+                 
+            if i < len( sorted_hitting_times_items ) -1:
+                next_key, next_t_key = sorted_hitting_times_items[i+1]
+            else:
+                next_t_key = -1 #dummy value 
+            if key != 'dummy':
+                vars_indepnedant_of_t.append( key )
+
+            if next_t_key == t_key:
+                continue 
+            for key in vars_indepnedant_of_t:
+                del S_dependant_k[key]
+                if grad[key] > 0.0:
+                    S_independant_k[key] = -1.0 * Vars[key]
+                elif grad[key] < 0.0:
+                    S_independant_k[key] = Box[key] - Vars[key]
+                else:
+                    S_independant_k[key] = 0.0
+            a, b = self._getQudraticQuoeff(S_independant_k, S_dependant_k, grad, Hessian)
+            #Check if the current interval is inside the trusts region
+            if squaredNorm( S_independant_k + S_dependant_k * next_t_key ) >= TrustRegionThreshold:
+                A = S_dependant_k.dot(S_dependant_k)
+                B = 2.0 * S_dependant_k.dot(S_independant_k)
+                C =  S_independant_k.dot(S_independant_k) - TrustRegionThreshold**2
+                D = B**2 - 4.0 * A * C
+                root_1_tc = (-B-math.sqrt(D))/(2*A)
+                root_2_tc = (-B+math.sqrt(D))/(2*A)
+                if root_1_tc > t_key and root_1_tc <= next_t_key:
+                    t_threshold = root_1_tc
+                else:
+                    t_threshold = root_2_tc 
+               # break
+
+
+            #Find the first local minimum, which happens in two cases
+            # (a) if the quadratic function is convex and its peak is in the interval [t_key, next_t_key]
+            # (b) if the quadratic function  was decreasing in the last interval and is increasing now. 
+            # check (a)
+            if a > 0.0 and -1.0 * b /(2 * a) > t_key and -1.0 * b /(2 * a) < next_t_key:
+                t_C_k = -1.0 * b /(2 * a)
+                if t_C_k > t_threshold:
+                    return S_independant_k + S_dependant_k * t_threshold
+
+                else:
+                    return S_independant_k + S_dependant_k * t_C_k
+
+            # check (b)
+            beg_deriavative_sgn = np.sign( 2*a * t_key + b)
+            if beg_deriavative_sgn == 0:
+                #Check if the quadratic functions peaks coincide with the hitting_times
+                if a > 0.0:
+                    beg_deriavative_sgn = 1
+                else:
+                    beg_deriavative_sgn = -1
+                    
+            if  end_deriavative_sgn<0 and beg_deriavative_sgn>0:
+                t_C_k = t_key
+                return  S_independant_k + S_dependant_k * t_C_k
+            end_deriavative_sgn = np.sign( 2*a * next_t_key + b)
+            if end_deriavative_sgn == 0:
+             #Check if the quadratic functions peaks coincide with the hitting_times
+                if a > 0.0:
+                    end_deriavative_sgn = -1
+                else:
+                    end_deriavative_sgn = 1
+            if t_threshold < sys.maxsize:
+              #If the quadratic function is decreasing in an interval before t_threshold
+                if  2*a * t_threshold + b <= 0.0:
+                    return S_independant_k + S_dependant_k * t_threshold 
+                else:
+                    return S_independant_k                   
+             
+                    
+                    
+            
+            
+                       
+
+    
         #find x_k + s_k and evaluate the function
 
         #Do the tests and updates 

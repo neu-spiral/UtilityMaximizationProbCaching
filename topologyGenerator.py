@@ -1153,6 +1153,7 @@ class Problem:
     def evalGradandUtilities(self):
         grads = {}
         utility_func = {}
+        Hessian  = {}
         for demand in self.demands:
             item = demand['item']
             maxRate = demand['rate']
@@ -1161,7 +1162,8 @@ class Problem:
             log_margin  = 1.e-1
             utility_func[(item, path)] = -1.0 * np.log(maxRate - self.VAR[(item,path)] + log_margin)
             grads[(item, path)] = 1./ (maxRate - self.VAR[(item,path)] + log_margin)
-        return grads, utility_func
+            Hessian[(item, path)] = (maxRate - self.VAR[(item,path)] + log_margin) ** -2
+        return grads, utility_func, Hessian
     def genDep(self):
       #* NOT USED  
       #  edge2vars_dep = {}
@@ -1292,7 +1294,7 @@ class Problem:
           
                                 
                                     
-        return grads, edge_func
+        return grads, edge_func, Hessian
     def evalGradandCapcityConstraints(self):
         grads = {}
         cap_nodes = {}

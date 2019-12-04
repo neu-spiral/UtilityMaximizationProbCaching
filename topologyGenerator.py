@@ -1150,7 +1150,7 @@ class Problem:
         self.VAR.update( self.REM  ) 
 
 
-    def evalGradandUtilities(self):
+    def evalGradandUtilities(self, degree=2):
         grads = {}
         utility_func = {}
         Hessian  = {}
@@ -1161,9 +1161,15 @@ class Problem:
             #*
             log_margin  = 1.e-1
             utility_func[(item, path)] = -1.0 * np.log(maxRate - self.VAR[(item,path)] + log_margin)
-            grads[(item, path)] = 1./ (maxRate - self.VAR[(item,path)] + log_margin)
-            Hessian[(item, path)] = (maxRate - self.VAR[(item,path)] + log_margin) ** -2
-        return grads, utility_func, Hessian
+            if dgree<1:
+                continue
+            #Grad
+            grads[(item, path)] = {(item, path): 1./ (maxRate - self.VAR[(item,path)] + log_margin)}
+            if dgree<2:
+                continue
+            #Hessian
+            Hessian[(item, path)] = {((item, path), (item, path)): (maxRate - self.VAR[(item,path)] + log_margin) ** -2}
+        return utility_func, grads, Hessian
     def genDep(self):
       #* NOT USED  
       #  edge2vars_dep = {}
@@ -1196,7 +1202,7 @@ class Problem:
             sumSoFar += prod_ip
         return cnst - sumSoFar
    
-    def evalGradandConstraints(self):
+    def evalGradandConstraints(self, degree=2):
         grads = {}
         Hessian = {}
         edge_func = {}
@@ -1233,7 +1239,8 @@ class Problem:
                 edge_func[edge] -= current_prod
 
 
-
+                if dgree<1:
+                    continue 
                 for j in range(i+1):
                     try:
                         current_grad_j = current_prod / (1.0 -   self.VAR[(item, path[j])])
@@ -1257,6 +1264,9 @@ class Problem:
                     else:
                       current_grad_j = current_prod_no_zero_literals 
                 grads[edge][(item, path)] = current_grad_j
+                
+                if degree<2:
+                    continue
                 #*Compute Hessian
                 for j in range(i+1):
                     for k in range(j+1, i+1):
@@ -1294,27 +1304,35 @@ class Problem:
           
                                 
                                     
-        return grads, edge_func, Hessian
-    def evalGradandCapcityConstraints(self):
+        return edge_func, grads, Hessian
+    def evalGradandCapcityConstraints(self, degree=2):
         grads = {}
         cap_nodes = {}
+        Hessian = {}
         for (item, node) in self.VAR:
              if type(node) == tuple:
                  continue 
              if node not in cap_nodes:
                  cap_nodes[node] =  self.capacities[node]
+
+             cap_nodes[node] -= self.VAR[(item, node)]
+             if degree<1:
+                 continue              
+             #Grad
              if node not in grads:
                  grads[node] = {}
              grads[node][(item, node)] = -1.0
-             cap_nodes[node] -= self.VAR[(item, node)]
-        return grads, cap_nodes
-    def evalFullConstraintsGrad(self):
-        cap_grads, cap_nodes = self.evalGradandCapcityConstraints()
-        edge_grads, edge_func = self.evalGradandConstraints()
+             if node not in Hessian 
+                 Hessian[node] = {}
+        return cap_nodes, grads, Hessian
+    def evalFullConstraintsGrad(self, degree=2):
+        cap_nodes, cap_grads, cap_Hessian = self.evalGradandCapcityConstraints(degree)
+        edge_func, edge_grads, edge_Hessian = self.evalGradandConstraints(degree)
 
         #Merge
         cap_grads.update( edge_grads )
         cap_nodes.update( edge_func ) 
+        cap_Hessian.update( edge_Hessian ) 
         return cap_grads, cap_nodes
                 
         

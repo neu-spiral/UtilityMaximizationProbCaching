@@ -30,11 +30,108 @@ class boxOptimizer():
             else:
                  #Caching variables 
                 Pr.VAR[key] = 0.0
+
+
+    def evalBarrierObjectivesGradsHessian(self, Pr, degree=2):
+        """Evalue the barrier function, i.e., 
+                  Psi(VAR) =  Objective(VAR) - \Sum_consraint lambda_consraint * shift_consraint * log( constrint + shift_consraint ),
+           along with its gradiant and Hessian. degree determines the degree of the evaluetion, i.e., degree=0 only computes the objective, degree=1 computes 
+           objective and the gradiant, and degree=2 computes the objective, the gradient, plus the Hessian.
+        """
+        obj_barrier = 0.0
+        grad_barrier  = {}
+        Hessian_barrier = {}
+        #w.r.t. constraints
+        constraint_func, constraint_grads, constraint_Hessian = Pr.evalFullConstraintsGrad(degree)
+        #w.r.t. objective 
+        obj_func, obj_grads, obj_Hessian = Pr.evalGradandUtilities(degree)
+
+
+
+        for obj in obj_func:
+            #Objective
+            obj_barrier += obj_func[index]
+
+            if dgree<1:
+                continue
+            #Grad
+            for index in obj_grads[obj]:
+                if index in grad_barrier:
+                    grad_barrier[index] += obj_grads[index]
+                else:
+                    grad_barrier[index] = obj_grads[index]
+            if degree<2:
+                continue
+            #Hessian
+            for index_pair in obj_Hessian[obj]:
+                if index_pair in Hessian_barrier:
+                    Hessian_barrier[index_pair] += obj_Hessianp[index_pair]
+                else:
+                    Hessian_barrier[index_pair] = obj_Hessian[index_pair]
+
+
+
+        for constraint in constraint_grads:
+            self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
+            #Objective
+            obj_barrier += -1.0 * self.LAMBDAS[constraint] * self.SHIFTS[constraint] * math.log(constraint_func[constraint] + self.SHIFTS[constraint])
+
+            if dgree<1:
+                continue
+            #Grad
+            for index in constraint_grads[constraint]:
+                grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
+                if index in grad_barrier:
+                    grad_barrier[index] += grad_index
+                else:
+                    grad_barrier[index] = grad_index
+
+            if dgree<2:
+                continue
+            #Hessian
+            for index_pair in constraint_Hessian[constraint]:
+                if index_pair in Hessian_barrier:
+                     Hessian_barrier[index_pair] += constraint_Hessian[index_pair]
+                else:
+                     Hessian_barrier[index_pair] = constraint_Hessian[index_pair]
+
+        return obj_barrier, SparseVector(obj_barrier), SparseVector(Hessian_barrier)
     def optimizer(self, Pr, iterations=100):
         
-        #while:
-        #TrustRegionThreshold = self.Delta * self.nu   
-        #s_k = findCauchyPoint(grad, Hessian, Vars, Box, TrustRegionThreshold)
+        REJ = False
+        for i in range(iterations):
+            TrustRegionThreshold = self.Delta * self.nu   
+
+            if not REJ:
+                obj, grad, Hessian = self.evalBarrierObjectivesGradsHessian(Pr) 
+            #Find a direction for update
+            s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.Box, TrustRegionThreshold)
+            #Update the current solution 
+            Pr.VAR += s_k
+            #Evaluet only the objective for the new point
+            obj_toBetested, grad_NULL, Hessian_NULL = self.evalBarrierObjectivesGradsHessian(Pr, 0) 
+            #Measure the improvement raio 
+            rho_k = (obj - obj_toBeTested) / (s_k.dot(grad) + 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
+            if rho_k <= self.mu:
+               #Point rejected
+                REJ = True
+                Pr.VAR -= s_k
+                self.Delta *= 0.5 * (self.gamma0 + self.gamma1)  
+            elif rho_k < self.eta:
+                 #Point accepted
+                 REJ = False
+                 self.Delta *=  0.5 * (self.gamma1 + 1.0) 
+            else:
+                 #Point accepted
+                 REJ = False
+                 self.Delta *=  0.5 * (1.0 + self.gamma2)  
+                
+                
+                
+            
+           
+            
+            
         #m = 
         #rho = (f(x_k) - f(x_k+s_k)) / (f(x_k) - )
         # if rho > mu
@@ -47,7 +144,7 @@ class boxOptimizer():
         a = 0.5 * S_dependant_k.dot( S_dependant_k.MatMul( Hessian)  ) 
         return a, b
       
-    def findCauchyPoint(self, grad, Hessian, Vars, Box, TrustRegionThreshold):
+    def _findCauchyPoint(self, grad, Hessian, Vars, Box, TrustRegionThreshold):
         "Return the direction s_k as in Step 1 of the algorithm. Note that grad and Hessian are SparseVectors."
         
        #Compute hitting times
@@ -193,14 +290,53 @@ class BarrierOptimizer():
            
 
 
-    def evalBarrierObjectivesGradsHessian(self, Pr):
+    def evalBarrierObjectivesGradsHessian(self, Pr, degree=2):
+        """Evalue the barrier function, i.e., 
+                  Psi(VAR) =  Objective(VAR) - \Sum_consraint lambda_consraint * shift_consraint * log( constrint + shift_consraint ),
+           along with its gradiant and Hessian. degree determines the degree of the evaluetion, i.e., degree=0 only computes the objective, degree=1 computes 
+           objective and the gradiant, and degree=2 computes the objective, the gradient, plus the Hessian.
+        """
+        obj_barrier = 0.0
         grad_barrier  = {}
+        Hessian_barrier = {}
         #w.r.t. constraints
-        constraint_grads, constraint_func, constraint_Hessian = Pr.evalFullConstraintsGrad()
+        constraint_func, constraint_grads, constraint_Hessian = Pr.evalFullConstraintsGrad(degree)
         #w.r.t. objective 
-        obj_grads, obj_func, obj_Hessian = Pr.evalGradandUtilities()
+        obj_func, obj_grads, obj_Hessian = Pr.evalGradandUtilities(degree)
+
+
+        
+        for obj in obj_func:
+            #Objective
+            obj_barrier += obj_func[index]
+
+            if dgree<1:
+                continue 
+            #Grad
+            for index in obj_grads[obj]:
+                if index in grad_barrier:
+                    grad_barrier[index] += obj_grads[index]
+                else:
+                    grad_barrier[index] = obj_grads[index]
+            if degree<2:
+                continue
+            #Hessian
+            for index_pair in obj_Hessian[obj]:
+                if index_pair in Hessian_barrier:
+                    Hessian_barrier[index_pair] += obj_Hessianp[index_pair]     
+                else: 
+                    Hessian_barrier[index_pair] = obj_Hessian[index_pair]
+             
+                
+
         for constraint in constraint_grads:
             self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
+            #Objective
+            obj_barrier += -1.0 * self.LAMBDAS[constraint] * self.SHIFTS[constraint] * math.log(constraint_func[constraint] + self.SHIFTS[constraint])
+
+            if dgree<1:
+                continue
+            #Grad
             for index in constraint_grads[constraint]:
                 grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
                 if index in grad_barrier:
@@ -208,15 +344,21 @@ class BarrierOptimizer():
                 else:
                     grad_barrier[index] = grad_index
 
-        for index in obj_grads:
-            if index in grad_barrier:
-                grad_barrier[index] += obj_grads[index]
-            else:
-                grad_barrier[index] = obj_grads[index]
-                    
-        
-        
+            if dgree<2:
+                continue
+            #Hessian
+            for index_pair in constraint_Hessian[constraint]:
+                if index_pair in Hessian_barrier:
+                     Hessian_barrier[index_pair] += constraint_Hessian[index_pair]
+                else:
+                     Hessian_barrier[index_pair] = constraint_Hessian[index_pair]
+                 
+        return obj_barrier, SparseVector(obj_barrier), SparseVector(Hessian_barrier) 
+
+          
+         
     def PGD(self, Pr, iterations=100):
+    #NOT USED 
         #The follwowing dictionaries keep track of the gradient of the barrier function`s objective 
         self.grad_Psi_VAR  = {}
         #Set the initial point, s.t., the constints functions are maximized 
@@ -282,7 +424,6 @@ class BarrierOptimizer():
        
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
-            print self.SHIFTS
             #Inner iteration
             constraint_func, non_optimality_norm = self.PGD(Pr, iterations = InnerIterations)
         

@@ -11,7 +11,9 @@ from SparseVector import SparseVector
 class boxOptimizer():
     def __init__(self):
     """This class is the implmentation of the algrotihm prposed in GLOBAL CONVERGENCE OF A CLASS OF
-        TRUST REGION ALGORITHMS FOR OPTIMIZATION WITH SIMPLE BOUNDS.
+        TRUST REGION ALGORITHMS FOR OPTIMIZATION WITH SIMPLE BOUNDS. It solves generic box constrianed problems of the form
+            Minimize F(x)
+            Subject to 0 <= x <= B.
     """
         self.mu = 0.5
         self.eta  = 0.6
@@ -32,15 +34,13 @@ class boxOptimizer():
                 Pr.VAR[key] = 0.0
 
 
-    def evalBarrierObjectivesGradsHessian(self, Pr, degree=2):
-        """Evalue the barrier function, i.e., 
-                  Psi(VAR) =  Objective(VAR) - \Sum_consraint lambda_consraint * shift_consraint * log( constrint + shift_consraint ),
-           along with its gradiant and Hessian. degree determines the degree of the evaluetion, i.e., degree=0 only computes the objective, degree=1 computes 
-           objective and the gradiant, and degree=2 computes the objective, the gradient, plus the Hessian.
+    def evluate(self, Pr, degree=2):
+        """Evalue the objective function 
         """
         obj_barrier = 0.0
         grad_barrier  = {}
         Hessian_barrier = {}
+        LAMBDA_BAR = {}
         #w.r.t. constraints
         constraint_func, constraint_grads, constraint_Hessian = Pr.evalFullConstraintsGrad(degree)
         #w.r.t. objective 
@@ -72,15 +72,15 @@ class boxOptimizer():
 
 
         for constraint in constraint_grads:
-            self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
+            LAMBDA_BAR[constraint] =  LAMBDAS[constraint] * SHIFTS[constraint] / (constraint_func[constraint] + SHIFTS[constraint])
             #Objective
-            obj_barrier += -1.0 * self.LAMBDAS[constraint] * self.SHIFTS[constraint] * math.log(constraint_func[constraint] + self.SHIFTS[constraint])
+            obj_barrier += -1.0 * LAMBDAS[constraint] * SHIFTS[constraint] * math.log(constraint_func[constraint] + SHIFTS[constraint])
 
             if dgree<1:
                 continue
             #Grad
             for index in constraint_grads[constraint]:
-                grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
+                grad_index = -1.0 * LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
                 if index in grad_barrier:
                     grad_barrier[index] += grad_index
                 else:
@@ -96,20 +96,19 @@ class boxOptimizer():
                      Hessian_barrier[index_pair] = constraint_Hessian[index_pair]
 
         return obj_barrier, SparseVector(obj_barrier), SparseVector(Hessian_barrier)
-    def optimizer(self, Pr, iterations=100):
+    def optimizer(self, Pr, Lambdas, Shifts, FirstOrderOptThreshold , iterations=100):
         
         REJ = False
+        obj, grad, Hessian = self.evluate(Pr)
         for i in range(iterations):
             TrustRegionThreshold = self.Delta * self.nu   
 
-            if not REJ:
-                obj, grad, Hessian = self.evalBarrierObjectivesGradsHessian(Pr) 
             #Find a direction for update
             s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.Box, TrustRegionThreshold)
             #Update the current solution 
             Pr.VAR += s_k
             #Evaluet only the objective for the new point
-            obj_toBetested, grad_NULL, Hessian_NULL = self.evalBarrierObjectivesGradsHessian(Pr, 0) 
+            obj_toBetested, grad_NULL, Hessian_NULL = self.evluate(Pr, 0) 
             #Measure the improvement raio 
             rho_k = (obj - obj_toBeTested) / (s_k.dot(grad) + 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
             if rho_k <= self.mu:
@@ -126,9 +125,11 @@ class boxOptimizer():
                  REJ = False
                  self.Delta *=  0.5 * (1.0 + self.gamma2)  
                 
+            if not REJ:
+                obj, grad, Hessian = self.evluate(Pr)
                 
-                
-            
+            #Stppping criterion 
+            ProjOperator(Pr.VAR, grad, Pr.BOX) <= FirstOrderOptThreshold  
            
             
             
@@ -285,12 +286,14 @@ class BarrierOptimizer():
                 self.LAMBDAS[constraint] = ( (-1.0 * constraint_func[constraint] + eps_margin) / self.MU) ** (1./self.alpha_lambda) 
 
         self.LAMBDA_BAR = self.LAMBDAS
+
+        self.innerSolver = boxOptimizer()
         #logger
         self.logger = logger
            
 
 
-    def evalBarrierObjectivesGradsHessian(self, Pr, degree=2):
+    def evaluate(self, Pr, degree=2):
         """Evalue the barrier function, i.e., 
                   Psi(VAR) =  Objective(VAR) - \Sum_consraint lambda_consraint * shift_consraint * log( constrint + shift_consraint ),
            along with its gradiant and Hessian. degree determines the degree of the evaluetion, i.e., degree=0 only computes the objective, degree=1 computes 
@@ -424,8 +427,7 @@ class BarrierOptimizer():
        
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
-            #Inner iteration
-            constraint_func, non_optimality_norm = self.PGD(Pr, iterations = InnerIterations)
+            self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA)
         
             comp_slack  = dict([(key, self.LAMBDA_BAR[key] * constraint_func[key]) for key in self.LAMBDA_BAR])
 

@@ -18,6 +18,7 @@ import itertools
 #from statsmodels.distributions.empirical_distribution import ECDF
 import pickle
 import topologies
+from SparseVector import SparseVector 
 
 class CONFIG(object):
     QUERY_MESSAGE_LENGTH = 0.0
@@ -1134,8 +1135,8 @@ class Problem:
         self.bandwidths = bandwidths
         self.demands = demands
         #Create caching and utility reminder variables, i.e., VAR and REM, respectively, and initizlie them to 0
-        self.REM = {}
-        self.VAR = {}
+        self.REM = SparseVector( {} )
+        self.VAR = SparseVector( {} )
         self.BOX = {}
         for demand in self.demands:
             item = demand['item']
@@ -1148,6 +1149,7 @@ class Problem:
                     self.VAR[(item, node)]  = 0.0
                     self.BOX[(item, node)]  = 1
         self.VAR.update( self.REM  ) 
+        
 
 
     def evalGradandUtilities(self, degree=2):

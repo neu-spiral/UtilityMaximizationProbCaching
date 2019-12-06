@@ -1163,11 +1163,11 @@ class Problem:
             #*
             log_margin  = 1.e-1
             utility_func[(item, path)] = -1.0 * np.log(maxRate - self.VAR[(item,path)] + log_margin)
-            if dgree<1:
+            if degree<1:
                 continue
             #Grad
             grads[(item, path)] = {(item, path): 1./ (maxRate - self.VAR[(item,path)] + log_margin)}
-            if dgree<2:
+            if degree<2:
                 continue
             #Hessian
             Hessian[(item, path)] = {((item, path), (item, path)): (maxRate - self.VAR[(item,path)] + log_margin) ** -2}
@@ -1241,7 +1241,7 @@ class Problem:
                 edge_func[edge] -= current_prod
 
 
-                if dgree<1:
+                if degree<1:
                     continue 
                 for j in range(i+1):
                     try:
@@ -1293,10 +1293,12 @@ class Problem:
                 for j in range(i+1):
                     try:
                         current_Hessian_j_r = current_prod / ( (maxRate - self.VAR[(item, path)]) *  (1.0 -   self.VAR[(item, path[j])]) )
+
                     except ZeroDivisionError:
                          if len(zero_literals) > 2:
                              current_Hessian_j_r = 0.0
                          else:
+                             current_Hessian_j_r =  current_prod_no_zero_literals
                              if  (item, path[j]) not in zero_literals:
                                  current_Hessian_j_r /=  (1.0 - self.VAR[(item, path[j])])
                              if (item, path) not in zero_literals:
@@ -1324,7 +1326,7 @@ class Problem:
              if node not in grads:
                  grads[node] = {}
              grads[node][(item, node)] = -1.0
-             if node not in Hessian 
+             if node not in Hessian:
                  Hessian[node] = {}
         return cap_nodes, grads, Hessian
     def evalFullConstraintsGrad(self, degree=2):
@@ -1335,7 +1337,7 @@ class Problem:
         cap_grads.update( edge_grads )
         cap_nodes.update( edge_func ) 
         cap_Hessian.update( edge_Hessian ) 
-        return cap_grads, cap_nodes
+        return cap_nodes, cap_grads, cap_Hessian
                 
         
     def pickle_cls(self,fname):

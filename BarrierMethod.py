@@ -10,11 +10,11 @@ from SparseVector import SparseVector
 
 class boxOptimizer():
     def __init__(self):
-    """This class is the implmentation of the algrotihm prposed in GLOBAL CONVERGENCE OF A CLASS OF
+        """This class is the implmentation of the algrotihm prposed in GLOBAL CONVERGENCE OF A CLASS OF
         TRUST REGION ALGORITHMS FOR OPTIMIZATION WITH SIMPLE BOUNDS. It solves generic box constrianed problems of the form
             Minimize F(x)
             Subject to 0 <= x <= B.
-    """
+        """
         self.mu = 0.5
         self.eta  = 0.6
         self.gamma0 = 0.3
@@ -34,8 +34,12 @@ class boxOptimizer():
                 Pr.VAR[key] = 0.0
 
 
-    def evluate(self, Pr, degree=2):
-        """Evalue the objective function 
+    def evaluate(self, Pr, LAMBDAS, SHIFTS, degree=2):
+        """Evalue the objective function. 
+           degree = -1 only computes the LAMBAD BAR
+           degree = 0 computes LAMBAD BAR plus the objective value
+           degree = +1 computes LAMBDA BAR, the objective, and the objective`s gradient
+           degree = +2 computes  LAMBDA BAR, the objective, the objective`s gradient, and the objective`s Hessian  
         """
         obj_barrier = 0.0
         grad_barrier  = {}
@@ -49,34 +53,40 @@ class boxOptimizer():
 
 
         for obj in obj_func:
+            if degree < 0:
+                continue
             #Objective
-            obj_barrier += obj_func[index]
+            obj_barrier += obj_func[obj]
 
-            if dgree<1:
+            if degree<1:
                 continue
             #Grad
             for index in obj_grads[obj]:
                 if index in grad_barrier:
-                    grad_barrier[index] += obj_grads[index]
+                    grad_barrier[index] += obj_grads[obj][index]
                 else:
-                    grad_barrier[index] = obj_grads[index]
+                    grad_barrier[index] = obj_grads[obj][index]
             if degree<2:
                 continue
             #Hessian
             for index_pair in obj_Hessian[obj]:
                 if index_pair in Hessian_barrier:
-                    Hessian_barrier[index_pair] += obj_Hessianp[index_pair]
+                    Hessian_barrier[index_pair] += obj_Hessian[obj][index_pair]
                 else:
-                    Hessian_barrier[index_pair] = obj_Hessian[index_pair]
+                    Hessian_barrier[index_pair] = obj_Hessian[obj][index_pair]
 
 
 
-        for constraint in constraint_grads:
+        for constraint in constraint_func:
             LAMBDA_BAR[constraint] =  LAMBDAS[constraint] * SHIFTS[constraint] / (constraint_func[constraint] + SHIFTS[constraint])
+            if degree < 0:
+                continue
             #Objective
-            obj_barrier += -1.0 * LAMBDAS[constraint] * SHIFTS[constraint] * math.log(constraint_func[constraint] + SHIFTS[constraint])
-
-            if dgree<1:
+            try:
+                obj_barrier += -1.0 * LAMBDAS[constraint] * SHIFTS[constraint] * math.log(constraint_func[constraint] + SHIFTS[constraint])
+            except ValueError:
+                obj_barrier = float("inf")
+            if degree<1:
                 continue
             #Grad
             for index in constraint_grads[constraint]:
@@ -86,31 +96,34 @@ class boxOptimizer():
                 else:
                     grad_barrier[index] = grad_index
 
-            if dgree<2:
+            if degree<2:
                 continue
             #Hessian
             for index_pair in constraint_Hessian[constraint]:
                 if index_pair in Hessian_barrier:
-                     Hessian_barrier[index_pair] += constraint_Hessian[index_pair]
+                     Hessian_barrier[index_pair] += constraint_Hessian[constraint][index_pair]
                 else:
-                     Hessian_barrier[index_pair] = constraint_Hessian[index_pair]
+                     Hessian_barrier[index_pair] = constraint_Hessian[constraint][index_pair]
 
-        return obj_barrier, SparseVector(obj_barrier), SparseVector(Hessian_barrier)
+        return LAMBDA_BAR, obj_barrier, SparseVector(grad_barrier), SparseVector(Hessian_barrier)
     def optimizer(self, Pr, Lambdas, Shifts, FirstOrderOptThreshold , iterations=100):
         
+        #Set initail point
+        self.initialPoint(Pr)
         REJ = False
-        obj, grad, Hessian = self.evluate(Pr)
+        LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
         for i in range(iterations):
             TrustRegionThreshold = self.Delta * self.nu   
 
             #Find a direction for update
-            s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.Box, TrustRegionThreshold)
+            s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold)
             #Update the current solution 
             Pr.VAR += s_k
+            
             #Evaluet only the objective for the new point
-            obj_toBetested, grad_NULL, Hessian_NULL = self.evluate(Pr, 0) 
+            LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
             #Measure the improvement raio 
-            rho_k = (obj - obj_toBeTested) / (s_k.dot(grad) + 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
+            rho_k = (obj - obj_toBeTested) / (-1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
             if rho_k <= self.mu:
                #Point rejected
                 REJ = True
@@ -123,15 +136,19 @@ class boxOptimizer():
             else:
                  #Point accepted
                  REJ = False
+              
                  self.Delta *=  0.5 * (1.0 + self.gamma2)  
                 
             if not REJ:
-                obj, grad, Hessian = self.evluate(Pr)
+                LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
                 
             #Stppping criterion 
-            ProjOperator(Pr.VAR, grad, Pr.BOX) <= FirstOrderOptThreshold  
-           
-            
+            firstOrderOpt = squaredNorm( ProjOperator(Pr.VAR, grad, Pr.BOX) )
+           # print "Direction is ", s_k, " rejection ", REJ, " ratio ", rho_k, " variables ", Pr.VAR
+            if firstOrderOpt <= FirstOrderOptThreshold:
+               break
+        LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0)
+        return LAMBDA_BAR, firstOrderOpt
             
         #m = 
         #rho = (f(x_k) - f(x_k+s_k)) / (f(x_k) - )
@@ -155,16 +172,17 @@ class boxOptimizer():
                hitting_times[key] = 0.0 
             elif grad[key] > 0:
                 hitting_times[key] = Vars[key] / grad[key]
-            else grad[key] < 0:
+            else:
                 hitting_times[key] = (Box[key] - Vars[key]) / abs( grad[key] )
         
         sorted_hitting_times_items = sorted(hitting_times.items(), key = lambda x: x[1])
        #Decompose S_k = S_independant_k + S_dependant_k * t
         S_independant_k = SparseVector({})
         S_dependant_k = SparseVector( dict([(key, -1.0 * grad[key]) for key in grad]) )
+        vars_indepnedant_of_t = []
         end_deriavative_sgn = 0
         t_threshold = sys.maxsize
-        for i in len( sorted_hitting_times_items ):
+        for i in range(len( sorted_hitting_times_items )):
             key, t_key = sorted_hitting_times_items[i]
                  
             if i < len( sorted_hitting_times_items ) -1:
@@ -173,10 +191,6 @@ class boxOptimizer():
                 next_t_key = -1 #dummy value 
             if key != 'dummy':
                 vars_indepnedant_of_t.append( key )
-
-            if next_t_key == t_key:
-                continue 
-            for key in vars_indepnedant_of_t:
                 del S_dependant_k[key]
                 if grad[key] > 0.0:
                     S_independant_k[key] = -1.0 * Vars[key]
@@ -184,6 +198,11 @@ class boxOptimizer():
                     S_independant_k[key] = Box[key] - Vars[key]
                 else:
                     S_independant_k[key] = 0.0
+            if next_t_key == t_key:
+                continue 
+            
+            #for key in vars_indepnedant_of_t:
+           #     del S_dependant_k[key]
             a, b = self._getQudraticQuoeff(S_independant_k, S_dependant_k, grad, Hessian)
             #Check if the current interval is inside the trusts region
             if squaredNorm( S_independant_k + S_dependant_k * next_t_key ) >= TrustRegionThreshold:
@@ -191,13 +210,21 @@ class boxOptimizer():
                 B = 2.0 * S_dependant_k.dot(S_independant_k)
                 C =  S_independant_k.dot(S_independant_k) - TrustRegionThreshold**2
                 D = B**2 - 4.0 * A * C
-                root_1_tc = (-B-math.sqrt(D))/(2*A)
-                root_2_tc = (-B+math.sqrt(D))/(2*A)
+            
+                try:
+                    root_1_tc = (-1.0 * B-math.sqrt(D))/(2*A)
+                    root_2_tc = (-1.0 * B+math.sqrt(D))/(2*A)
+                except ZeroDivisionError:
+                    try:
+                        root_1_tc = -1.0 * C / B
+                        root_2_tc = root_1_tc
+                    except ZeroDivisionError:
+                        root_1_tc = sys.maxsize
+                        root_2_tc = sys.maxsize
                 if root_1_tc > t_key and root_1_tc <= next_t_key:
                     t_threshold = root_1_tc
                 else:
                     t_threshold = root_2_tc 
-               # break
 
 
             #Find the first local minimum of the piece-wise quadratic function a * t**2 + b * t
@@ -219,10 +246,12 @@ class boxOptimizer():
                 #Check if the quadratic functions peaks coincide with the hitting_times
                 if a > 0.0:
                     beg_deriavative_sgn = 1
+                elif a == 0.0:
+                    beg_deriavative_sgn = 0
                 else:
                     beg_deriavative_sgn = -1
                     
-            if  end_deriavative_sgn<0 and beg_deriavative_sgn>0:
+            if  end_deriavative_sgn<0 and beg_deriavative_sgn >= 0:
                 t_C_k = t_key
                 return  S_independant_k + S_dependant_k * t_C_k
             end_deriavative_sgn = np.sign( 2*a * next_t_key + b)
@@ -236,9 +265,11 @@ class boxOptimizer():
               #If the quadratic function is decreasing in an interval before t_threshold
                 if  2*a * t_threshold + b <= 0.0:
                     return S_independant_k + S_dependant_k * t_threshold 
-                else:
-                    return S_independant_k                   
+                #else:
+                #    return S_independant_k      
+        return  SparseVector( {} )
              
+                                  
                     
                     
             
@@ -275,7 +306,7 @@ class BarrierOptimizer():
         self.OMEGA  = self.omega_s * self.MU**self.alpha_omega 
         self.ETA = self.eta_s * self.MU ** self.alpha_eta
         #Initialize the dual variables LAMBDAS
-        constraint_grads, constraint_func = Pr.evalFullConstraintsGrad()
+        constraint_func,constraint_grads, constraint_HESSIAN = Pr.evalFullConstraintsGrad(0 )
         self.LAMBDAS = {}
         #* eps
         eps_margin = 1.e-1
@@ -285,78 +316,13 @@ class BarrierOptimizer():
             else:
                 self.LAMBDAS[constraint] = ( (-1.0 * constraint_func[constraint] + eps_margin) / self.MU) ** (1./self.alpha_lambda) 
 
-        self.LAMBDA_BAR = self.LAMBDAS
+        #self.LAMBDA_BAR = self.LAMBDAS
 
         self.innerSolver = boxOptimizer()
         #logger
         self.logger = logger
            
 
-
-    def evaluate(self, Pr, degree=2):
-        """Evalue the barrier function, i.e., 
-                  Psi(VAR) =  Objective(VAR) - \Sum_consraint lambda_consraint * shift_consraint * log( constrint + shift_consraint ),
-           along with its gradiant and Hessian. degree determines the degree of the evaluetion, i.e., degree=0 only computes the objective, degree=1 computes 
-           objective and the gradiant, and degree=2 computes the objective, the gradient, plus the Hessian.
-        """
-        obj_barrier = 0.0
-        grad_barrier  = {}
-        Hessian_barrier = {}
-        #w.r.t. constraints
-        constraint_func, constraint_grads, constraint_Hessian = Pr.evalFullConstraintsGrad(degree)
-        #w.r.t. objective 
-        obj_func, obj_grads, obj_Hessian = Pr.evalGradandUtilities(degree)
-
-
-        
-        for obj in obj_func:
-            #Objective
-            obj_barrier += obj_func[index]
-
-            if dgree<1:
-                continue 
-            #Grad
-            for index in obj_grads[obj]:
-                if index in grad_barrier:
-                    grad_barrier[index] += obj_grads[index]
-                else:
-                    grad_barrier[index] = obj_grads[index]
-            if degree<2:
-                continue
-            #Hessian
-            for index_pair in obj_Hessian[obj]:
-                if index_pair in Hessian_barrier:
-                    Hessian_barrier[index_pair] += obj_Hessianp[index_pair]     
-                else: 
-                    Hessian_barrier[index_pair] = obj_Hessian[index_pair]
-             
-                
-
-        for constraint in constraint_grads:
-            self.LAMBDA_BAR[constraint] =  self.LAMBDAS[constraint] * self.SHIFTS[constraint] / (constraint_func[constraint] + self.SHIFTS[constraint])
-            #Objective
-            obj_barrier += -1.0 * self.LAMBDAS[constraint] * self.SHIFTS[constraint] * math.log(constraint_func[constraint] + self.SHIFTS[constraint])
-
-            if dgree<1:
-                continue
-            #Grad
-            for index in constraint_grads[constraint]:
-                grad_index = -1.0 * self.LAMBDA_BAR[constraint] * constraint_grads[constraint][index]
-                if index in grad_barrier:
-                    grad_barrier[index] += grad_index
-                else:
-                    grad_barrier[index] = grad_index
-
-            if dgree<2:
-                continue
-            #Hessian
-            for index_pair in constraint_Hessian[constraint]:
-                if index_pair in Hessian_barrier:
-                     Hessian_barrier[index_pair] += constraint_Hessian[index_pair]
-                else:
-                     Hessian_barrier[index_pair] = constraint_Hessian[index_pair]
-                 
-        return obj_barrier, SparseVector(obj_barrier), SparseVector(Hessian_barrier) 
 
           
          
@@ -427,17 +393,30 @@ class BarrierOptimizer():
        
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
-            self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA)
+            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations)
         
-            comp_slack  = dict([(key, self.LAMBDA_BAR[key] * constraint_func[key]) for key in self.LAMBDA_BAR])
+            constraint_func, constraint_grads_NULL, constraint_Hessian_NULL = Pr.evalFullConstraintsGrad(0)
+            comp_slack = {}
+            comp_slack  = dict([(key, new_LAMBDA_BAR[key] * constraint_func[key]) for key in new_LAMBDA_BAR])
 
             comp_slack_norm = squaredNorm(comp_slack)
     
+            
             if comp_slack_norm < self.eta_star and non_optimality_norm < self.omega_star:
                  break
-            if squaredNorm( dict([(key, comp_slack[key]/(self.LAMBDAS[key]**self.alpha_lambda)) for key in self.LAMBDAS] ) ) <= self.ETA:
+            scaled_comp_slack = {}
+            for key in comp_slack:
+                try:
+                    scaled_comp_slack[key] = comp_slack[key]/(self.LAMBDAS[key]**self.alpha_lambda)
+                except ZeroDivisionError:
+                    if comp_slack[key] == 0:
+                        scaled_comp_slack[key] = 0.0
+                    else:
+                        raise Exception('Lambda bar is not zero while lambda is zero.')
+                        
+            if squaredNorm( scaled_comp_slack ) <= self.ETA:
                 #Exe. Step 3
-                self.LAMBDAS = self.LAMBDA_BAR
+                self.LAMBDAS = new_LAMBDA_BAR
                 self.OMEGA *= (self.MU ** self.beta_omega)
                 self.ETA *= (self.MU ** self.beta_eta) 
             else:
@@ -445,6 +424,7 @@ class BarrierOptimizer():
                 self.MU *= self.tau
                 self.OMEGA = self.omega_s * self.MU ** self.alpha_omega
                 self.ETA = self.eta_s * self.MU ** self.alpha_eta
+           
 
             self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
             
@@ -453,8 +433,8 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
-    parser.add_argument('--innerIterations',default=100,type=int, help='Number of inner iterations') 
-    parser.add_argument('--outerIterations',default=100,type=int, help='Number of outer iterations')
+    parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations') 
+    parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
     parser.add_argument('--logLevel',default='INFO', help='Verbosity level',choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'])
     args = parser.parse_args()
@@ -463,8 +443,8 @@ if __name__=="__main__":
     problem_instance = Problem.unpickle_cls(args.problem) 
     ##Debugging
 
-    for key in problem_instance.VAR:
-        problem_instance.VAR[key] = 0.58
+    #for key in problem_instance.VAR:
+    #    problem_instance.VAR[key] = 0.58
 
     #The gradient computation 
     eps = 1.e-3

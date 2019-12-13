@@ -1435,7 +1435,7 @@ def main():
    parser.add_argument('--demand_distribution',default="powerlaw",type=str, help='Demand distribution',choices=['powerlaw','uniform'])
    parser.add_argument('--powerlaw_exp',default=1.2,type=float, help='Power law exponent, used in demand distribution')
    parser.add_argument('--query_nodes',default=10,type=int, help='Number of nodes generating queries')
-   parser.add_argument('--graph_type',default="erdos_renyi",type=str, help='Graph type',choices=['erdos_renyi','balanced_tree','hypercube',"cicular_ladder","cycle","grid_2d",'lollipop','expander','hypercube','star', 'barabasi_albert','watts_strogatz','regular','powerlaw_tree','small_world','geant','abilene','dtelekom','servicenetwork'])
+   parser.add_argument('--graph_type',default="erdos_renyi",type=str, help='Graph type',choices=['erdos_renyi','balanced_tree','hypercube',"cicular_ladder","cycle","grid_2d",'lollipop','expander','hypercube','star', 'barabasi_albert','watts_strogatz','regular','powerlaw_tree','small_world','geant','abilene','dtelekom','servicenetwork', 'linear'])
    parser.add_argument('--graph_size',default=100, type=int, help='Network size')
    parser.add_argument('--graph_degree',default=4, type=int, help='Degree. Used by balanced_tree, regular, barabasi_albert, watts_strogatz')
    parser.add_argument('--graph_p',default=0.10, type=int, help='Probability, used in erdos_renyi, watts_strogatz')
@@ -1500,6 +1500,8 @@ def main():
 	    return topologies.Abilene()
 	if args.graph_type =='servicenetwork':
 	    return topologies.ServiceNetwork()
+        if args.graph_type == 'linear':
+            return networkx.path_graph(args.graph_size)
 
    def cacheGenerator(capacity,_id):
    	if args.cache_type == 'LRU':
@@ -1537,6 +1539,8 @@ def main():
         xx = number_map[x]
 	yy = number_map[y]
    	G.add_edges_from( ((xx,yy),(yy,xx)) ) 
+   
+   print "Graph edges are: ", G.edges()
    graph_size = G.number_of_nodes()
    edge_size = G.number_of_edges()
    logging.info('...done. Created graph with %d nodes and %d edges' % (graph_size,edge_size))
@@ -1545,6 +1549,10 @@ def main():
    construct_stats['edge_size'] = edge_size
    logging.info('Generating item sources...')
    item_sources = dict( (item,[list(G.nodes)[source]]) for item,source in zip(range(args.catalog_size),np.random.choice(range(graph_size),args.catalog_size)) )
+   if args.graph_type == 'linear':
+       item_sources = {}
+       for item in range(args.catalog_size):
+           item_sources[item] = [args.graph_size -1]
    logging.info('...done. Generated %d sources'%len(item_sources))
    logging.debug('Generated sources:')
    for item in item_sources:
@@ -1555,6 +1563,10 @@ def main():
    logging.info('Generating query node list...')
    
    query_node_list = [ list(G.nodes)[i] for i  in random.sample(xrange(graph_size),args.query_nodes)]
+
+    #*HARD CODED
+   if args.graph_type == 'linear':
+        query_node_list = [0]
    
    logging.info('...done. Generated %d query nodes.'%len(query_node_list) )
 
@@ -1568,7 +1580,7 @@ def main():
    pmf =  np.array( [ factor(i) for i in range(args.catalog_size) ] ) 
    pmf /= sum(pmf)
    distr = rv_discrete(values=(range(args.catalog_size),pmf))
-   if args.catalog_size < args.demand_size: 
+   if args.catalog_size <= args.demand_size: 
    	items_requested = list(distr.rvs(size = (args.demand_size-args.catalog_size))) +range(args.catalog_size)
    else:
 	items_requested =  list(distr.rvs(size = args.demand_size))
@@ -1614,16 +1626,16 @@ def main():
 
    logging.info('Building CacheNetwork')
    logging.info('...done')
-   out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes"
+   out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes" + "_" + str(args.congestion)  + "congestion"
    pr = Problem(G,capacities,demands,bandwidths)
    pr.pickle_cls(out)
    print 'Demands are: ', pr.demands
    print 'bandwidths are : ', pr.bandwidths
    print 'Capacities are : ', pr.capacities 
    print 'VARS and REM are : ', pr.VAR
-   print 'Constraint grads are : ', pr.evalGradandConstraints()
-   print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
-   print 'Full Grads are: ', pr.evalFullConstraintsGrad()
+#   print 'Constraint grads are : ', pr.evalGradandConstraints()
+#   print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
+ #  print 'Full Grads are: ', pr.evalFullConstraintsGrad()
    
    
 if __name__=="__main__":

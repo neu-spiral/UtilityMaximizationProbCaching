@@ -22,8 +22,16 @@ class boxOptimizer():
         self.gamma2  = 2.0
         self.Delta = 0.5
         self.nu = 1.0
-    def initialPoint(self, Pr, startFromLast=False):
+    def initialPoint(self, Pr, SHIFTS, startFromLast=False):
         if startFromLast:
+            return 
+
+        constraint_func, constraint_grads_dummy, constraint_Hessian_dummy = Pr.evalFullConstraintsGrad(0)
+        FEAS = True
+        #If the current 
+        for constraint in constraint_func:
+           FEAS = FEAS and constraint_func[constraint]  + SHIFTS[constraint] >= 0.0 
+        if FEAS:
             return 
         for key in Pr.VAR:
             if type(key[1]) == tuple:
@@ -106,10 +114,8 @@ class boxOptimizer():
                      Hessian_barrier[index_pair] = constraint_Hessian[constraint][index_pair]
 
         return LAMBDA_BAR, obj_barrier, SparseVector(grad_barrier), SparseVector(Hessian_barrier)
-    def optimizer(self, Pr, Lambdas, Shifts, FirstOrderOptThreshold , iterations=100):
+    def optimizer(self, Pr, Lambdas, Shifts, FirstOrderOptThreshold , iterations=100, logger=None):
         
-        #Set initail point
-        self.initialPoint(Pr)
         REJ = False
         LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
         for i in range(iterations):
@@ -123,7 +129,13 @@ class boxOptimizer():
             #Evaluet only the objective for the new point
             LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
             #Measure the improvement raio 
-            rho_k = (obj - obj_toBeTested) / (-1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
+            if  -1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian) )  != 0:
+                rho_k = (obj - obj_toBeTested) / (-1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
+            else:
+                #If in the current interval local min is t = 0, make the trust region larger so that the algorithm can find a better local min.
+                rho_k =  self.eta
+            
+ 
             if rho_k <= self.mu:
                #Point rejected
                 REJ = True
@@ -136,17 +148,21 @@ class boxOptimizer():
             else:
                  #Point accepted
                  REJ = False
-              
                  self.Delta *=  0.5 * (1.0 + self.gamma2)  
-                
             if not REJ:
                 LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
                 
             #Stppping criterion 
+            if i % 100 == 1:
+                print "Inner iter ", i, " variables and grad are ", Pr.VAR, grad
             firstOrderOpt = squaredNorm( ProjOperator(Pr.VAR, grad, Pr.BOX) )
+            if not REJ:
+                logger.info("Inner iteration %d, current obejctive value is %.3f and current optimality gap is %.3f" %(i, obj, firstOrderOpt  )  )
            # print "Direction is ", s_k, " rejection ", REJ, " ratio ", rho_k, " variables ", Pr.VAR
             if firstOrderOpt <= FirstOrderOptThreshold:
                break
+            
+             
         LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0)
         return LAMBDA_BAR, firstOrderOpt
             
@@ -235,6 +251,7 @@ class boxOptimizer():
             if a > 0.0 and -1.0 * b /(2 * a) > t_key and -1.0 * b /(2 * a) < next_t_key:
                 t_C_k = -1.0 * b /(2 * a)
                 if t_C_k > t_threshold:
+                    
                     return S_independant_k + S_dependant_k * t_threshold
 
                 else:
@@ -389,13 +406,20 @@ class BarrierOptimizer():
                 break
         return constraint_func, non_optimality_norm   
         
-    def outerIter(self, Pr, OuterIterations, InnerIterations):
+    def outerIter(self, Pr, OuterIterations, InnerIterations, debugLevel):
        
+        startFromLast = False
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
-            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations)
-        
+            #Set initial point
+            self.innerSolver.initialPoint(Pr, self.SHIFTS, startFromLast)
+            #print "Values at the start of the ", k," ",Pr.VAR 
+            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, self.logger )
+            #print "Values at the end of the ", k," ",Pr.VAR 
+             
             constraint_func, constraint_grads_NULL, constraint_Hessian_NULL = Pr.evalFullConstraintsGrad(0)
+            if debugLevel == 'DEBUG':
+                print constraint_func
             comp_slack = {}
             comp_slack  = dict([(key, new_LAMBDA_BAR[key] * constraint_func[key]) for key in new_LAMBDA_BAR])
 
@@ -416,14 +440,18 @@ class BarrierOptimizer():
                         
             if squaredNorm( scaled_comp_slack ) <= self.ETA:
                 #Exe. Step 3
+                print "executing step 3 ", k
                 self.LAMBDAS = new_LAMBDA_BAR
                 self.OMEGA *= (self.MU ** self.beta_omega)
                 self.ETA *= (self.MU ** self.beta_eta) 
+                startFromLast = True
             else:
                 #Exe. Step 4
+                print "executing step 4, ", k
                 self.MU *= self.tau
                 self.OMEGA = self.omega_s * self.MU ** self.alpha_omega
                 self.ETA = self.eta_s * self.MU ** self.alpha_eta
+                startFromLast = False 
            
 
             self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
@@ -436,31 +464,13 @@ if __name__=="__main__":
     parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations') 
     parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
+    parser.add_argument('--debug_level',default='INFO',type=str,help='Debug Level', choices=['INFO','DEBUG','WARNING','ERROR'])
     parser.add_argument('--logLevel',default='INFO', help='Verbosity level',choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'])
     args = parser.parse_args()
 
     
     problem_instance = Problem.unpickle_cls(args.problem) 
-    ##Debugging
-
-    #for key in problem_instance.VAR:
-    #    problem_instance.VAR[key] = 0.58
-
-    #The gradient computation 
     eps = 1.e-3
-    #Eval grads and functions 
-#    constraint_grads, constraint_func = problem_instance.evalFullConstraintsGrad()
-#    for i in range(0):
-        #Pick random constraints and variables
-#        const = random.choice( constraint_grads.keys() )
-#        index  = random.choice( constraint_grads[const].keys() )
-#        print "The computed gradient of constraint ",const, " w.r.t. ", index, " is ", constraint_grads[const][index] 
-#        problem_instance.VAR[index] += eps
-
- #       constraint_grads_eps, constraint_func_eps = problem_instance.evalFullConstraintsGrad()
- #       print "The emperical gradient of constraint ", const,  " w.r.t. ", index, " is ", (constraint_func_eps[const] - constraint_func[const])/eps
-
- #       problem_instance.VAR[index] -= eps
        
     #set up logfile
     logger = logging.getLogger('Shifted Barrier Method')
@@ -473,7 +483,7 @@ if __name__=="__main__":
    
 
     optimizer = BarrierOptimizer(problem_instance, logger)
-    optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations)
+    optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations, debugLevel=args.debug_level)
     problem_instance.pickle_cls( args.opt_problem )
     print  problem_instance.VAR
     

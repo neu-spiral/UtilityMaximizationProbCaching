@@ -1142,12 +1142,12 @@ class Problem:
             item = demand['item']
             maxRate = demand['rate']
             path = tuple(demand['path'])
-            self.REM[(item, path)] = 0.0
+            self.REM[(item, path)] = 1.0
             self.BOX[(item ,path)] = maxRate
             for node in path:
                 if (item, node) not in self.VAR:
                     self.VAR[(item, node)]  = 0.0
-                    self.BOX[(item, node)]  = 1
+                    self.BOX[(item, node)]  = 1.0
         self.VAR.update( self.REM  ) 
         
 

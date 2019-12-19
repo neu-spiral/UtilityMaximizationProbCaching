@@ -42,7 +42,7 @@ class boxOptimizer():
                 Pr.VAR[key] = 0.0
 
 
-    def evaluate(self, Pr, LAMBDAS, SHIFTS, degree=2):
+    def evaluate(self, Pr, LAMBDAS, SHIFTS, degree=2, debug=False):
         """Evalue the objective function. 
            degree = -1 only computes the LAMBAD BAR
            degree = 0 computes LAMBAD BAR plus the objective value
@@ -119,29 +119,38 @@ class boxOptimizer():
         REJ = False
         LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
         #Initialize delta 
-       # self.Delta = 0.5
+        self.Delta = 0.5
         for i in range(iterations):
             TrustRegionThreshold = self.Delta * self.nu   
 
 
             #Find a direction for update
-          #  if debug:
-          #      s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, debug=True)
-          #  else:
-            s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, debug=False)
+            if debug:
+                s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, scaling=True, debug=False)
+            else:
+                s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, debug=False)
+            
             #Update the current solution 
             Pr.VAR += s_k
+
+
+            if  debug:
+                print "Iter ", i, "VAR is ", Pr.VAR
+                print "S_k is ", s_k
             
             #Evaluet only the objective for the new point
-            LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
+            if i>0:
+                LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
+            else:
+                LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0, True)
             #Measure the improvement raio 
             if  -1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian) )  != 0:
                 rho_k = (obj - obj_toBeTested) / (-1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
             else:
                 #If in the current interval local min is t = 0, make the trust region larger so that the algorithm can find a better local min.
                 rho_k =  self.eta
-            
- 
+            if debug:
+                print  "NUM is ", obj - obj_toBeTested, " DENOM is ",  -1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian) )
      #       if debug and  not REJ:
      #           print "Iter ",i, " VARS ", Pr.VAR
                # print "Iter ",i, "S_K is ",s_k 
@@ -164,9 +173,13 @@ class boxOptimizer():
                  self.Delta *=  0.5 * (1.0 + self.gamma2)  
             if not REJ:
                 LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
+           
 
+            if debug:
+                print "Rejections is ", REJ
 
             #Stppping criterion 
+            
             firstOrderOpt = squaredNorm( ProjOperator(Pr.VAR, grad, Pr.BOX) )
             logger.info("Inner iteration %d, current obejctive value is %.3f and current optimality gap is %.3f" %(i, obj, firstOrderOpt  )  )
 
@@ -174,7 +187,6 @@ class boxOptimizer():
             if firstOrderOpt <= FirstOrderOptThreshold:
                break
             
-             
         LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0)
         return LAMBDA_BAR, firstOrderOpt
             
@@ -190,24 +202,37 @@ class boxOptimizer():
         a = 0.5 * S_dependant_k.dot( S_dependant_k.MatMul( Hessian)  ) 
         return a, b
       
-    def _findCauchyPoint(self, grad, Hessian, Vars, Box, TrustRegionThreshold, debug=False):
+    def _findCauchyPoint(self, grad, Hessian, Vars, Box, TrustRegionThreshold, scaling=False, debug=False):
         "Return the direction s_k as in Step 1 of the algorithm. Note that grad and Hessian are SparseVectors."
         
+
+        if not scaling:
+            scalingD = dict( [(key, 1.0) for key in Vars] )
+        else:
+            scalingD = {}
+            for key in Vars:
+                try: 
+                    if grad[key] >= 0: 
+                        scalingD[key] =  Vars[key]
+                    else:
+                        scalingD[key] =    (Box[key] - Vars[key] )
+                except ZeroDivisionError:
+                    scalingD[key] = 10.0
        #Compute hitting times
         hitting_times = {'dummy':0.0 }
         for key in Vars:
             if grad[key] == 0.0:
                hitting_times[key] = sys.maxsize
             elif grad[key] > 0:
-                hitting_times[key] = Vars[key] / grad[key]
+                hitting_times[key] = Vars[key] / (scalingD[key] * grad[key])
             else:
-                hitting_times[key] = (Box[key] - Vars[key]) / abs( grad[key] )
+                hitting_times[key] = (Box[key] - Vars[key]) / abs(  scalingD[key] * grad[key] )
         
         sorted_hitting_times_items = sorted(hitting_times.items(), key = lambda x: x[1])
         
        #Decompose S_k = S_independant_k + S_dependant_k * t
         S_independant_k = SparseVector({})
-        S_dependant_k = SparseVector( dict([(key, -1.0 * grad[key]) for key in grad]) )
+        S_dependant_k = SparseVector( dict([(key, -1.0 * scalingD[key] * grad[key]) for key in grad]) )
         vars_indepnedant_of_t = []
         end_deriavative_sgn = 0
         t_threshold = sys.maxsize
@@ -230,6 +255,8 @@ class boxOptimizer():
             if next_t_key == t_key:
                 continue 
             
+            if debug:
+                print "Search ointerval is :", t_key, next_t_key
             #for key in vars_indepnedant_of_t:
            #     del S_dependant_k[key]
             a, b = self._getQudraticQuoeff(S_independant_k, S_dependant_k, grad, Hessian)
@@ -337,7 +364,7 @@ class BarrierOptimizer():
         self.beta_omega = initVal
         self.beta_eta = initVal
         self.alpha_lambda = initVal
-        self.tau = 0.5
+        self.tau = 0.75
         self.rho = 0.5
         self.omega_star = 1.e-10
         self.eta_star = 1.e-10
@@ -432,18 +459,19 @@ class BarrierOptimizer():
     def outerIter(self, Pr, OuterIterations, InnerIterations, debugLevel):
        
         startFromLast = False
+        print Pr.VAR
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
            # if k == OuterIterations -1:
            #     print 'Final iter shifts are ', self.SHIFTS
             #Set initial point
             self.innerSolver.initialPoint(Pr, self.SHIFTS, startFromLast)
-            print "Initail point for iter ", k, " is ", Pr.VAR
-            if k < OuterIterations-1:
-                new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=False, logger=self.logger )
-            else:
-                new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
-            print "Values at the end of the ", k," ",Pr.VAR 
+        #    print "Initail point for iter ", k, " is ", Pr.VAR
+           # if k < OuterIterations-1:
+            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=False, logger=self.logger )
+          #  else:
+          #      new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
+         #   print "Values at the end of the ", k," ",Pr.VAR 
              
             constraint_func, constraint_grads_NULL, constraint_Hessian_NULL = Pr.evalFullConstraintsGrad(0)
             if debugLevel == 'DEBUG':

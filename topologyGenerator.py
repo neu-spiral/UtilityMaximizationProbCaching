@@ -1144,13 +1144,16 @@ class Problem:
             path = tuple(demand['path'])
             self.REM[(item, path)] = 1.0
             self.BOX[(item ,path)] = maxRate
-            for node in path:
+            for node in path[:-1]:
                 if (item, node) not in self.VAR:
                     self.VAR[(item, node)]  = 0.0
                     self.BOX[(item, node)]  = 1.0
         self.VAR.update( self.REM  ) 
         
 
+    def setVAR2Zero(self):
+        for var in self.VAR:
+            self.VAR[var]  = 0.0
 
     def evalGradandUtilities(self, degree=2):
         grads = {}
@@ -1173,24 +1176,25 @@ class Problem:
             Hessian[(item, path)] = {((item, path), (item, path)): (maxRate - self.VAR[(item,path)] + log_margin) ** -2}
         return utility_func, grads, Hessian
     def genDep(self):
-      #* NOT USED  
-      #  edge2vars_dep = {}
-        edge2rem_dep = {}
+        #NOT Used!
+        """Generate a dict of dependencaies, s.t., the kyes are variables (item . node) and the values 
+         are the list of edges tha depend on the caching variable corresponding to the item and node."""
+
+        Var2edge_dep = {}
         for demand in self.demands:
             item = demand['item']
             rate = demand['rate']
             path = tuple(demand['path'])
+            tmp_VarSoFar = []
             for node_i in range(len(path)-1):
                 edge = (path[node_i],path[node_i+1])
-                if edge not in edge2rem_dep:
-                    edge2rem_dep[edge] = set([(item,path,rate)])
-                else:
-                    edge2rem_dep[edge].update(set([(item,path,rate)]))
-              #  if edge not in edge2vars_dep:
-              #      edge2vars_dep[edge] = set([(item, node_i)])
-              #  else:
-              #      edge2vars_dep[edge].update(set([(item, node_i)]))
-        return edge2rem_dep
+                tmp_VarSoFar.append( (path[node_i], item)  )
+                for iterm_node_pair in tmp_VarSoFar:
+                    if iterm_node_pair not in Var2edge_dep:
+                        Var2edge_dep[iterm_node_pair] = [edge]
+                    else:
+                        Var2edge_dep[iterm_node_pair].append( edge )
+        return edge2vars_dep
     
                 
     def evalConstraint(self, edge, edge2rem_dep):
@@ -1203,6 +1207,29 @@ class Problem:
                 prod_ip *= (1.0 - self.VAR[(item, node_i)])
             sumSoFar += prod_ip
         return cnst - sumSoFar
+
+    def evalDelta(self, given_item, given_node):
+        "Evaluate the total decrease in link constraints when item is cached at node"
+        totalDelta = 0.0
+        for demand in self.demands:
+            item = demand['item']
+            maxRate = demand['rate']
+            path = tuple(demand['path']) 
+            if item != given_item or given_node not in path:
+                continue
+
+            current_prod_without_given_pair = maxRate - self.VAR[(item, path)]
+            given_item_node_VSISTED = False
+            for i in range(len(path)-1):
+                if item == given_item and path[i] == given_node:
+                    given_item_node_VSISTED = True
+                else:
+                    current_prod_without_given_pair *=  (1.0 - self.VAR[(item, path[i])])
+
+                if current_prod_without_given_pair > 0.0 and given_item_node_VSISTED:
+                    totalDelta += current_prod_without_given_pair
+        return totalDelta
+
    
     def evalGradandConstraints(self, degree=2):
         grads = {}
@@ -1632,7 +1659,6 @@ def main():
    print 'Demands are: ', pr.demands
    print 'bandwidths are : ', pr.bandwidths
    print 'Capacities are : ', pr.capacities 
-   print 'VARS and REM are : ', pr.VAR
 #   print 'Constraint grads are : ', pr.evalGradandConstraints()
 #   print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
  #  print 'Full Grads are: ', pr.evalFullConstraintsGrad()

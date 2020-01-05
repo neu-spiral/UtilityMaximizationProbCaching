@@ -30,4 +30,9 @@ def squaredNorm(X):
     'Compute the ell_2 norm for a dict'
     return np.sqrt( sum([val**2 for val in X.values()]) )
        
+def reverseDict(d):
+    "Reteun an inverse dictionary of the given dict d"
+    if len(d.values()) != len(set(d.values())):
+        raise ValueError('Dictionary is invertible.')
+    return dict( [(d[key], key) for key in d] )
 

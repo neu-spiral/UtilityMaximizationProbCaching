@@ -1149,6 +1149,9 @@ class Problem:
                     self.VAR[(item, node)]  = 0.0
                     self.BOX[(item, node)]  = 1.0
         self.VAR.update( self.REM  ) 
+        #Margin for log utilities
+        self.log_margin = 1.e-1
+
         
 
     def setVAR2Zero(self):
@@ -1164,16 +1167,16 @@ class Problem:
             maxRate = demand['rate']
             path = tuple(demand['path'])
             #*
-            log_margin  = 1.e-1
-            utility_func[(item, path)] = -1.0 * np.log(maxRate - self.VAR[(item,path)] + log_margin)
+            #log_margin  = 1.e-1
+            utility_func[(item, path)] = -1.0 * np.log(maxRate - self.VAR[(item,path)] + self.log_margin)
             if degree<1:
                 continue
             #Grad
-            grads[(item, path)] = {(item, path): 1./ (maxRate - self.VAR[(item,path)] + log_margin)}
+            grads[(item, path)] = {(item, path): 1./ (maxRate - self.VAR[(item,path)] + self.log_margin)}
             if degree<2:
                 continue
             #Hessian
-            Hessian[(item, path)] = {((item, path), (item, path)): (maxRate - self.VAR[(item,path)] + log_margin) ** -2}
+            Hessian[(item, path)] = {((item, path), (item, path)): (maxRate - self.VAR[(item,path)] + self.log_margin) ** -2}
         return utility_func, grads, Hessian
     def genDep(self):
         #NOT Used!

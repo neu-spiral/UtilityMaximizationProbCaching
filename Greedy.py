@@ -4,6 +4,8 @@ import numpy as np
 from cvxopt import matrix, spmatrix, solvers
 import argparse
 
+solvers.options['show_progress'] = False
+
 class maximizeUtility():
     def __init__(self,problem_instance):
         self.problem_instance = problem_instance
@@ -48,6 +50,26 @@ class maximizeUtility():
         matrix_value_list += [-1.0] * col
         matrix_value_rows += [row + ind for ind in range(col)]
         matrix_value_cols += [ind for ind in range(col)] 
+        #Add upper bound (maxRate) on the rates
+        vec_values_appended = [0.0] * col
+        matrix_value_list_appended = []
+        matrix_value_cols_appended = []
+        for ind in maxRateCol:
+             vec_values_appended[ind] = maxRateCol[ind]
+             matrix_value_cols_appended.append(ind)
+             matrix_value_list_appended.append(1.0)
+            
+             
+        vector_value_list += vec_values_appended
+        vector_value_rows += range(row + col, row + 2 * col)
+        matrix_value_list += matrix_value_list_appended
+        matrix_value_rows += range(row + col, row + 2 * col)
+        matrix_value_cols += matrix_value_cols_appended
+        
+
+        
+        
+        
         #Write variable to indices 
         self.maxRateCol = maxRateCol
         self.edge2row = edge2row
@@ -55,10 +77,11 @@ class maximizeUtility():
         self.row2edge = reverseDict(edge2row)
         self.col2demand = reverseDict(demand2col) 
         #Make matrices
-        total_rows = row + col
+        total_rows = row + 2 * col 
         total_cols = col
         G = spmatrix(matrix_value_list, matrix_value_rows, matrix_value_cols, (total_rows, total_cols))
         h = spmatrix(vector_value_list,  vector_value_rows, [0 for r in range(total_rows)], (total_rows, 1))
+        print G
         return G, h
     def maximize(self):
         #Make the constraints 
@@ -166,10 +189,40 @@ def continiousGreedyCache(problem_instance, iterations=100):
             problem_instance.VAR[var] += step_size 
         t += step_size 
 
-def Greedy1(problem_instance):
-    pass
-
-
+class Greedy1():
+    def __init__(self, problem_instance):
+        self.problem_instance = problem_instance
+    def evaluate(self):
+        utility_func, dummy1, dummy2 = self.problem_instance.evalGradandUtilities(0)
+        obj = sum(utility_func.values())
+        constraint_func, dummy1, dummy2 = self.problem_instance.evalGradandConstraints(0)
+        tot_constrinats = sum(constraint_func.values())
+        return obj, tot_constrinats
+       
+    def optimize(self):
+        #Set caching (all) variables to zero
+        #self.problem_instance.setVAR2Zero()
+    
+        OBJ, CONSTRAINT = self.evaluate()
+        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        #Determine rates by maximizng the total utility w.r.t. rates
+        MU = maximizeUtility(problem_instance)
+        MU.maximize()
+        OBJ, CONSTRAINT = self.evaluate()
+        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        #Cache items
+        continiousGreedyCache(problem_instance) 
+        OBJ, CONSTRAINT = self.evaluate()
+        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        #Determine rates by maximizng the total utility w.r.t. rates
+        MU = maximizeUtility(problem_instance)
+        MU.maximize()
+        OBJ, CONSTRAINT = self.evaluate()
+        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        print self.problem_instance.VAR
+    
+   
+    
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
@@ -184,11 +237,10 @@ if __name__=="__main__":
 
     problem_instance = Problem.unpickle_cls(args.problem)
 
-    problem_instance.setVAR2Zero()
     print "Demands: ", problem_instance.demands
     print "Capacities are :", problem_instance.capacities
-    MU = maximizeUtility(problem_instance)
-    continiousGreedyCache(problem_instance, 10)
+    GD = Greedy1(problem_instance)
+    GD.optimize()
     print "Variables are: ", problem_instance.VAR
     eps = 1.e-3
 

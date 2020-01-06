@@ -1,8 +1,9 @@
 from topologyGenerator import Problem
-from helpers import reverseDict
+from helpers import reverseDict,clearFile
 import numpy as np
 from cvxopt import matrix, spmatrix, solvers
 import argparse
+import logging
 
 solvers.options['show_progress'] = False
 
@@ -81,7 +82,6 @@ class maximizeUtility():
         total_cols = col
         G = spmatrix(matrix_value_list, matrix_value_rows, matrix_value_cols, (total_rows, total_cols))
         h = spmatrix(vector_value_list,  vector_value_rows, [0 for r in range(total_rows)], (total_rows, 1))
-        print G
         return G, h
     def maximize(self):
         #Make the constraints 
@@ -138,10 +138,12 @@ def greedyCache(problem_instance):
         if problem_instance.VAR[(item, node)] < 1.0:
             delta_item_node_pair = problem_instance.evalDelta(item, node)
             deltas[(item, node)] = delta_item_node_pair
-            print "Delta for", item, node, " is ", delta_item_node_pair
+    if len(deltas.items()) == 0:
+       return False
     max_pair, max_delta = max(deltas.items(), key=lambda keyVal: keyVal[1])
     item, node = max_pair
     problem_instance.VAR[(item, node)] = 1.0
+    return True 
 def continiousGreedyCache(problem_instance, iterations=100):
     "Minimize total flow in othe network, While rates are fixed. Note that the objective is a super-modular function."
 
@@ -190,8 +192,9 @@ def continiousGreedyCache(problem_instance, iterations=100):
         t += step_size 
 
 class Greedy1():
-    def __init__(self, problem_instance):
+    def __init__(self, problem_instance, logger=None):
         self.problem_instance = problem_instance
+        self.logger = logger
     def evaluate(self):
         utility_func, dummy1, dummy2 = self.problem_instance.evalGradandUtilities(0)
         obj = sum(utility_func.values())
@@ -201,25 +204,34 @@ class Greedy1():
        
     def optimize(self):
         #Set caching (all) variables to zero
-        #self.problem_instance.setVAR2Zero()
+        self.problem_instance.setVAR2Zero()
     
         OBJ, CONSTRAINT = self.evaluate()
-        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         #Determine rates by maximizng the total utility w.r.t. rates
-        MU = maximizeUtility(problem_instance)
+        MU = maximizeUtility(self.problem_instance)
         MU.maximize()
         OBJ, CONSTRAINT = self.evaluate()
-        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         #Cache items
-        continiousGreedyCache(problem_instance) 
+        continiousGreedyCache(self.problem_instance) 
         OBJ, CONSTRAINT = self.evaluate()
-        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
+        self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         #Determine rates by maximizng the total utility w.r.t. rates
-        MU = maximizeUtility(problem_instance)
+       # MU = maximizeUtility(problem_instance)
         MU.maximize()
         OBJ, CONSTRAINT = self.evaluate()
-        print "OBJ is ", OBJ, " total constraints are", CONSTRAINT
-        print self.problem_instance.VAR
+        self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
+class Greedy2(Greedy1):
+    def optimize(self):
+        #Set caching (all) variables to zero
+        self.problem_instance.setVAR2Zero()
+        MU = maximizeUtility(problem_instance) 
+        while greedyCache( self.problem_instance):
+            MU.maximize()
+            OBJ, CONSTRAINT = self.evaluate()
+            self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
+        
     
    
     
@@ -227,6 +239,7 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
+    parser.add_argument('method', help='Which greedy algrotihm to use', choices=['Greedy1', 'Greedy2'])
     parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations')
     parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
@@ -235,12 +248,20 @@ if __name__=="__main__":
     args = parser.parse_args()
 
 
+    logger = logging.getLogger('Greedy Method')
+    logger.setLevel(eval("logging."+args.logLevel))
+    clearFile(args.logfile)
+    fh = logging.FileHandler(args.logfile)
+    fh.setLevel(eval("logging."+args.logLevel))
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(fh)
+
+
     problem_instance = Problem.unpickle_cls(args.problem)
 
-    print "Demands: ", problem_instance.demands
-    print "Capacities are :", problem_instance.capacities
-    GD = Greedy1(problem_instance)
+    greedyClass = eval(args.method)
+    GD = greedyClass(problem_instance, logger)
     GD.optimize()
     print "Variables are: ", problem_instance.VAR
-    eps = 1.e-3
+    problem_instance.pickle_cls( args.opt_problem )
 

@@ -131,11 +131,13 @@ class maximizeUtility():
 def greedyCache(problem_instance):
     "Find an item and a node, s.t., caching the item on that node has the maximum decrease in total flow over the network." 
     deltas = {}
+    
+    cache_constraints = problem_instance.evalGradandCapcityConstraints(0)[0]
     for var in problem_instance.VAR:
         if type(var[1]) == tuple:
             continue 
         item, node = var
-        if problem_instance.VAR[(item, node)] < 1.0:
+        if problem_instance.VAR[(item, node)] < 1.0 and cache_constraints[node] > 0.0:
             delta_item_node_pair = problem_instance.evalDelta(item, node)
             deltas[(item, node)] = delta_item_node_pair
     if len(deltas.items()) == 0:
@@ -195,32 +197,26 @@ class Greedy1():
     def __init__(self, problem_instance, logger=None):
         self.problem_instance = problem_instance
         self.logger = logger
-    def evaluate(self):
-        utility_func, dummy1, dummy2 = self.problem_instance.evalGradandUtilities(0)
-        obj = sum(utility_func.values())
-        constraint_func, dummy1, dummy2 = self.problem_instance.evalGradandConstraints(0)
-        tot_constrinats = sum(constraint_func.values())
-        return obj, tot_constrinats
        
     def optimize(self):
         #Set caching (all) variables to zero
         self.problem_instance.setVAR2Zero()
     
-        OBJ, CONSTRAINT = self.evaluate()
+        OBJ, CONSTRAINT = self.problem_instance.evaluate()
         self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         #Determine rates by maximizng the total utility w.r.t. rates
         MU = maximizeUtility(self.problem_instance)
         MU.maximize()
-        OBJ, CONSTRAINT = self.evaluate()
+        OBJ, CONSTRAINT = self.problem_instance.evaluate()
         self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         #Cache items
         continiousGreedyCache(self.problem_instance) 
-        OBJ, CONSTRAINT = self.evaluate()
+        OBJ, CONSTRAINT = self.problem_instance.evaluate()
         self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         #Determine rates by maximizng the total utility w.r.t. rates
        # MU = maximizeUtility(problem_instance)
         MU.maximize()
-        OBJ, CONSTRAINT = self.evaluate()
+        OBJ, CONSTRAINT = self.problem_instance.evaluate()
         self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
 class Greedy2(Greedy1):
     def optimize(self):
@@ -229,7 +225,7 @@ class Greedy2(Greedy1):
         MU = maximizeUtility(problem_instance) 
         while greedyCache( self.problem_instance):
             MU.maximize()
-            OBJ, CONSTRAINT = self.evaluate()
+            OBJ, CONSTRAINT = self.problem_instance.evaluate()
             self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
         
     

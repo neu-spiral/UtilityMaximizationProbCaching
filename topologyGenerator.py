@@ -1368,6 +1368,15 @@ class Problem:
         cap_nodes.update( edge_func ) 
         cap_Hessian.update( edge_Hessian ) 
         return cap_nodes, cap_grads, cap_Hessian
+
+    def evaluate(self):
+        "Compute the toal objective and the ratio of satisfied constraints."
+        utility_func, dummy1, dummy2 = self.evalGradandUtilities(0)
+        obj = sum(utility_func.values())
+        constraint_func, dummy1, dummy2 = self.evalFullConstraintsGrad(0)
+        satisfied_constrints = [constraint_func[constraint] >= 0.0 for constraint  in constraint_func]
+        tot_constrinats = sum(constraint_func.values())
+        return obj, sum(satisfied_constrints)/(1.0* len(constraint_func.items() ))
                 
         
     def pickle_cls(self,fname):
@@ -1570,7 +1579,7 @@ def main():
 	yy = number_map[y]
    	G.add_edges_from( ((xx,yy),(yy,xx)) ) 
    
-   print "Graph edges are: ", G.edges()
+   print "Number of  edges ", len(G.edges())
    graph_size = G.number_of_nodes()
    edge_size = G.number_of_edges()
    logging.info('...done. Created graph with %d nodes and %d edges' % (graph_size,edge_size))

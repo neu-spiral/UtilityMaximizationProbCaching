@@ -181,7 +181,8 @@ class boxOptimizer():
             #Stppping criterion 
             
             firstOrderOpt = squaredNorm( ProjOperator(Pr.VAR, grad, Pr.BOX) )
-            logger.info("Inner iteration %d, current obejctive value is %.3f and current optimality gap is %.3f" %(i, obj, firstOrderOpt  )  )
+            if i % 50 == 0:
+                logger.info("Inner iteration %d, current obejctive value is %.3f and current optimality gap is %.3f" %(i, obj, firstOrderOpt  )  )
 
            # print "Direction is ", s_k, " rejection ", REJ, " ratio ", rho_k, " variables ", Pr.VAR
             if firstOrderOpt <= FirstOrderOptThreshold:
@@ -366,8 +367,8 @@ class BarrierOptimizer():
         self.alpha_lambda = initVal
         self.tau = 0.75
         self.rho = 0.5
-        self.omega_star = 1.e-10
-        self.eta_star = 1.e-10
+        self.omega_star = 1.e-3
+        self.eta_star = 1.e-3
         self.alpha_eta = 1.1 - 1./(1+ self.alpha_lambda)
         self.MU = initVal
         self.OMEGA  = self.omega_s * self.MU**self.alpha_omega 
@@ -459,15 +460,15 @@ class BarrierOptimizer():
     def outerIter(self, Pr, OuterIterations, InnerIterations, debugLevel):
        
         startFromLast = False
-        print Pr.VAR
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
            # if k == OuterIterations -1:
-           #     print 'Final iter shifts are ', self.SHIFTS
+     #       print 'shifts are ', self.SHIFTS
             #Set initial point
             self.innerSolver.initialPoint(Pr, self.SHIFTS, startFromLast)
         #    print "Initail point for iter ", k, " is ", Pr.VAR
            # if k < OuterIterations-1:
+            print self.OMEGA
             new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=False, logger=self.logger )
           #  else:
           #      new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
@@ -509,9 +510,10 @@ class BarrierOptimizer():
                 self.ETA = self.eta_s * self.MU ** self.alpha_eta
                 startFromLast = False 
            
-
-            self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
+            OBJ, CONSTR = Pr.evaluate()
             
+            self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
+            self.logger.info("Objective is %f, the ratio of satisfied constraints sum is %f" %(OBJ,  CONSTR) )
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)

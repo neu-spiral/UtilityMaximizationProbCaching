@@ -19,6 +19,7 @@ import itertools
 import pickle
 import topologies
 from SparseVector import SparseVector 
+from helpers import clearFile
 
 class CONFIG(object):
     QUERY_MESSAGE_LENGTH = 0.0
@@ -1465,6 +1466,7 @@ def main():
 
    parser = argparse.ArgumentParser(description = 'Simulate a Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
    parser.add_argument('outputfile',help = 'Output file')
+   parser.add_argument('--logfile',default='generator.log',type=str, help='logfile')
    parser.add_argument('--max_capacity',default=2,type=int, help='Maximum capacity per cache')
    parser.add_argument('--min_capacity',default=2,type=int, help='Minimum capacity per cache')
    parser.add_argument('--max_rate',default=1.0,type=float, help='Maximum demand rate')
@@ -1498,7 +1500,8 @@ def main():
 	if args.graph_type == "erdos_renyi":
 	    return networkx.erdos_renyi_graph(args.graph_size,args.graph_p)
 	if args.graph_type == "balanced_tree":
-	    ndim = int(np.ceil(np.log(args.graph_size)/np.log(args.graph_degree)))
+            #* Changed ceiling to floor
+	    ndim = int(np.floor(np.log(args.graph_size)/np.log(args.graph_degree)))
 	    return networkx.balanced_tree(args.graph_degree,ndim)
 	if args.graph_type == "cicular_ladder":
 	    ndim = int(np.ceil(args.graph_size*0.5))
@@ -1579,7 +1582,6 @@ def main():
 	yy = number_map[y]
    	G.add_edges_from( ((xx,yy),(yy,xx)) ) 
    
-   print "Number of  edges ", len(G.edges())
    graph_size = G.number_of_nodes()
    edge_size = G.number_of_edges()
    logging.info('...done. Created graph with %d nodes and %d edges' % (graph_size,edge_size))
@@ -1644,17 +1646,25 @@ def main():
         Demand_list.append(demand.__dict__)
 
    demands = Demand_list 
-   logging.info('...done. Generated %d demands'%len(demands))
+
+
+   logger = logging.getLogger('Topology Generator')
+   clearFile(args.logfile)
+   fh = logging.FileHandler(args.logfile)
+   fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+   logger.addHandler(fh)
+
+   logger.info('...done. Generated %d demands'%len(demands))
    #plt.hist([ d.item for d in demands], bins=np.arange(args.catalog_size)+0.5)
    #plt.show()
    construct_stats['demands'] = len(demands)
 
-   logging.info('Generating capacities...')
+   logger.info('Generating capacities...')
    capacities = dict( (x,random.randint(args.min_capacity,args.max_capacity)) for  x in G.nodes() )
-   logging.info('...done. Generated %d caches' % len(capacities))
-   logging.debug('Generated capacities:')
+   logger.info('...done. Generated %d caches' % len(capacities))
+   logger.debug('Generated capacities:')
    for key in capacities:
-   	logging.debug(pp([key,':',capacities[key]]))
+   	logger.debug(pp([key,':',capacities[key]]))
    dem_items=[]
    for demand in demands:
          item = demand['item']
@@ -1663,14 +1673,16 @@ def main():
    bandwidths = generate_bandwidths(demands, margin=args.congestion) 
 
 
-   logging.info('Building CacheNetwork')
-   logging.info('...done')
+   logger.info('Building CacheNetwork')
+   logger.info('...done')
    out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes" + "_" + str(args.congestion)  + "congestion"
    pr = Problem(G,capacities,demands,bandwidths)
+   print "The number of variables is ", len(pr.VAR.keys())
    pr.pickle_cls(out)
-   print 'Demands are: ', pr.demands
-   print 'bandwidths are : ', pr.bandwidths
-   print 'Capacities are : ', pr.capacities 
+   
+#   print 'Demands are: ', pr.demands
+#   print 'bandwidths are : ', pr.bandwidths
+#   print 'Capacities are : ', pr.capacities 
 #   print 'Constraint grads are : ', pr.evalGradandConstraints()
 #   print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
  #  print 'Full Grads are: ', pr.evalFullConstraintsGrad()

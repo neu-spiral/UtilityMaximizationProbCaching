@@ -4,7 +4,8 @@ import numpy as np
 from cvxopt import matrix, spmatrix, solvers
 import argparse
 import logging
-
+import time
+import pickle
 solvers.options['show_progress'] = False
 
 class maximizeUtility():
@@ -199,6 +200,13 @@ class Greedy1():
         self.logger = logger
        
     def optimize(self):
+
+        
+        trace = {}
+        k = 0
+        trace[k] = {}
+        start_time = time.time()
+
         #Set caching (all) variables to zero
         self.problem_instance.setVAR2Zero()
     
@@ -217,16 +225,34 @@ class Greedy1():
        # MU = maximizeUtility(problem_instance)
         MU.maximize()
         OBJ, CONSTRAINT = self.problem_instance.evaluate()
+        #write stats to trace
+        currentTime = time.time()
+        trace[k]['time'] = currentTime - start_time
+        trace[k]['OBJ'] = OBJ
+        trace[k]['CONSTRAINT'] = CONSTRAINT
         self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
+        return trace
 class Greedy2(Greedy1):
     def optimize(self):
+        trace = {}
+        k = 0
+        start_time = time.time()
         #Set caching (all) variables to zero
         self.problem_instance.setVAR2Zero()
         MU = maximizeUtility(problem_instance) 
+        
         while greedyCache( self.problem_instance):
+            trace[k] = {}
             MU.maximize()
             OBJ, CONSTRAINT = self.problem_instance.evaluate()
+            currentTime = time.time()
+            trace[k]['time'] = currentTime - start_time
+            trace[k]['OBJ'] = OBJ
+            trace[k]['CONSTRAINT'] = CONSTRAINT 
             self.logger.info( "Objective is %.3f the total link constraints sum is %.3f" %(OBJ, CONSTRAINT))
+            k += 1
+        return trace 
+       
         
     
    
@@ -235,6 +261,7 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
+    parser.add_argument('trace_file',help = 'Trace file') 
     parser.add_argument('method', help='Which greedy algrotihm to use', choices=['Greedy1', 'Greedy2'])
     parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations')
     parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
@@ -257,7 +284,9 @@ if __name__=="__main__":
 
     greedyClass = eval(args.method)
     GD = greedyClass(problem_instance, logger)
-    GD.optimize()
+    trace = GD.optimize()
     print "Variables are: ", problem_instance.VAR
     problem_instance.pickle_cls( args.opt_problem )
+    with open(args.trace_file,'wb') as f:
+        pickle.dump((args,trace),f)
 

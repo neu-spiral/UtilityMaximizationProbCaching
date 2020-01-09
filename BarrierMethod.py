@@ -7,6 +7,8 @@ from topologyGenerator import Problem
 import numpy as np
 import argparse
 from SparseVector import SparseVector
+import time
+import pickle
 
 class boxOptimizer():
     def __init__(self):
@@ -125,37 +127,21 @@ class boxOptimizer():
 
 
             #Find a direction for update
-            if debug:
-                s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, scaling=True, debug=False)
-            else:
-                s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, debug=False)
+            s_k = self._findCauchyPoint(grad, Hessian, Pr.VAR, Pr.BOX, TrustRegionThreshold, debug=False)
             
             #Update the current solution 
             Pr.VAR += s_k
 
 
-            if  debug:
-                print "Iter ", i, "VAR is ", Pr.VAR
-                print "S_k is ", s_k
             
             #Evaluet only the objective for the new point
-            if i>0:
-                LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
-            else:
-                LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0, True)
+            LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
             #Measure the improvement raio 
             if  -1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian) )  != 0:
                 rho_k = (obj - obj_toBeTested) / (-1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian)  ) ) 
             else:
                 #If in the current interval local min is t = 0, make the trust region larger so that the algorithm can find a better local min.
                 rho_k =  self.eta
-            if debug:
-                print  "NUM is ", obj - obj_toBeTested, " DENOM is ",  -1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian) )
-     #       if debug and  not REJ:
-     #           print "Iter ",i, " VARS ", Pr.VAR
-               # print "Iter ",i, "S_K is ",s_k 
-                #print "Grad is ", grad , "\n var ", Pr.VAR
-          #      print " iter ", i, " grad is ", grad 
                 
              
             if rho_k <= self.mu:
@@ -174,15 +160,16 @@ class boxOptimizer():
             if not REJ:
                 LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
            
-
-            if debug:
-                print "Rejections is ", REJ
+            if debug and not REJ:
+                print "s_k is ", s_k
+                print "Var is ", Pr.VAR
+                print "grad is ", grad
 
             #Stppping criterion 
             
             firstOrderOpt = squaredNorm( ProjOperator(Pr.VAR, grad, Pr.BOX) )
             if i % 50 == 0:
-                logger.info("Inner iteration %d, current obejctive value is %.3f and current optimality gap is %.3f" %(i, obj, firstOrderOpt  )  )
+                logger.info("Inner iteration %d, current obejctive value is %.8f and current optimality gap is %.10f" %(i, obj, firstOrderOpt  )  )
 
            # print "Direction is ", s_k, " rejection ", REJ, " ratio ", rho_k, " variables ", Pr.VAR
             if firstOrderOpt <= FirstOrderOptThreshold:
@@ -363,8 +350,8 @@ class BarrierOptimizer():
         self.omega_s = initVal
         self.alpha_omega = initVal
         self.beta_omega = initVal
-        self.beta_eta = initVal
-        self.alpha_lambda = initVal
+        self.beta_eta = 0.25
+        self.alpha_lambda = 1.0
         self.tau = 0.75
         self.rho = 0.5
         self.omega_star = 1.e-3
@@ -460,19 +447,20 @@ class BarrierOptimizer():
     def outerIter(self, Pr, OuterIterations, InnerIterations, debugLevel):
        
         startFromLast = False
+        trace = {}
+        startTime = time.time()
         for k in range(OuterIterations):
             self.SHIFTS  = dict([(edge, self.MU * (self.LAMBDAS[edge] ** self.alpha_lambda)) for edge in self.LAMBDAS] )
            # if k == OuterIterations -1:
-     #       print 'shifts are ', self.SHIFTS
+            #print 'shifts are ', self.SHIFTS
             #Set initial point
             self.innerSolver.initialPoint(Pr, self.SHIFTS, startFromLast)
         #    print "Initail point for iter ", k, " is ", Pr.VAR
-           # if k < OuterIterations-1:
-            print self.OMEGA
+         #   if k < OuterIterations-1:
+        #    print self.OMEGA
             new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=False, logger=self.logger )
-          #  else:
-          #      new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
-         #   print "Values at the end of the ", k," ",Pr.VAR 
+         #   else:
+         #       new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
              
             constraint_func, constraint_grads_NULL, constraint_Hessian_NULL = Pr.evalFullConstraintsGrad(0)
             if debugLevel == 'DEBUG':
@@ -481,10 +469,25 @@ class BarrierOptimizer():
             comp_slack  = dict([(key, new_LAMBDA_BAR[key] * constraint_func[key]) for key in new_LAMBDA_BAR])
 
             comp_slack_norm = squaredNorm(comp_slack)
-    
+             
+
+            #Evaluate and record stats
+            OBJ, CONSTR = Pr.evaluate()
+            currentTime = time.time()
+            trace[k] = {}
+            trace[k]['non_optimilaity'] = non_optimality_norm
+            trace[k]['slackness'] = comp_slack_norm
+            trace[k]['OBJ'] = OBJ
+            trace[k]['CONSTRAINT'] = CONSTR
+            trace[k]['time']  = currentTime - startTime
+            #log info
+            self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
+            self.logger.info("Objective is %f, the ratio of satisfied constraints sum is %f" %(OBJ,  CONSTR) )
             
             if comp_slack_norm < self.eta_star and non_optimality_norm < self.omega_star:
                  break
+
+            #Check condition 
             scaled_comp_slack = {}
             for key in comp_slack:
                 try:
@@ -497,28 +500,26 @@ class BarrierOptimizer():
                         
             if squaredNorm( scaled_comp_slack ) <= self.ETA:
                 #Exe. Step 3
-                print "executing step 3 ", k
+                self.logger.info("executing step 3 ")
                 self.LAMBDAS = new_LAMBDA_BAR
                 self.OMEGA *= (self.MU ** self.beta_omega)
                 self.ETA *= (self.MU ** self.beta_eta) 
                 startFromLast = True
             else:
                 #Exe. Step 4
-                print "executing step 4, ", k
+                self.logger.info("executing step 4, ")
                 self.MU *= self.tau
                 self.OMEGA = self.omega_s * self.MU ** self.alpha_omega
                 self.ETA = self.eta_s * self.MU ** self.alpha_eta
                 startFromLast = False 
            
-            OBJ, CONSTR = Pr.evaluate()
-            
-            self.logger.info("OUTER ITERATION %d, current non-optimality is %f, current complimentary slackness violation is %f" %(k, non_optimality_norm, comp_slack_norm) )
-            self.logger.info("Objective is %f, the ratio of satisfied constraints sum is %f" %(OBJ,  CONSTR) )
+        return trace
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Run the Shifted Barrier Method for  Optimizing Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
+    parser.add_argument('trace_file',help = 'Trace file')
     parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations') 
     parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
@@ -541,9 +542,11 @@ if __name__=="__main__":
    
 
     optimizer = BarrierOptimizer(problem_instance, logger)
-    optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations, debugLevel=args.debug_level)
+    trace = optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations, debugLevel=args.debug_level)
     problem_instance.pickle_cls( args.opt_problem )
-    print  problem_instance.VAR
+    
+    with open(args.trace_file,'wb') as f:
+        pickle.dump((args,trace),f)
     
     
         

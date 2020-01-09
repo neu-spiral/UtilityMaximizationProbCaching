@@ -1,3 +1,7 @@
+
+import matplotlib
+matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import argparse
 from matplotlib.transforms import Bbox
@@ -13,10 +17,10 @@ colors =['b', 'g', 'r', 'c' ,'m' ,'y' ,'k' ,'w']
 hatches = ['////', '/', '\\', '\\\\', '-', '--', '+', '']
 
 
-Algorithms = ['RND', 'CG-RS500','CG-PS1','CG-PS2','CGT','Greedy']
+Algorithms = ['Barrier', 'Greedy1','Greedy2']
 graph2lbl =  {'erdos_renyi':'ER','special_case':'path','erdos_renyi2':'ER-20Q','hypercube2':'hypercube-20Q'}
     
-topologies = ['cycle', 'lollipop','erdos_renyi', 'grid_2d','star','hypercube','small_world','barabasi_albert' 'dtelekom','abilene','geant']
+topologies = ['balanced_tree','cycle', 'lollipop','erdos_renyi', 'grid_2d','star','hypercube','small_world','barabasi_albert', 'dtelekom','abilene','geant']
 def whichAlg( filename):
     "Find filename corresponds to which algrotihm."
     if re.search('Greedy1',  filename ):
@@ -32,38 +36,50 @@ def whichTopology( filename):
             return topology
     
 
-def bar_ex1(DICS,outfile):
+def barPlotter(DICS, outfile, y_axis_label = 'Objective'):
+    def form_vals(DICS_alg):
+        out = []
+        labels = []
+        for topology in topologies:
+            try:
+                out.append( DICS_alg[topology]  )
+                labels.append(topology)
+            except KeyError:
+                print topology
+                continue 
+        return out, labels
+        
     fig, ax = plt.subplots()
     fig.set_size_inches(18, 6)
     width = 1
-    N = len(Graphs)
-    numb_bars = len(Algorithms)+1
+
+
+    N = len(DICS[Algorithms[0]].keys()) 
+    numb_bars = len(Algorithms) 
     ind = np.arange(0,numb_bars*N ,numb_bars)
     print ind
     RECTS = []
     i = 0
     for alg in Algorithms:
-        RECTS+= ax.bar(ind+i*width, form_vals(DICS[alg])[0], align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
+        values, labels = form_vals(DICS[alg])
+        print len(ind), len(values), N
+        ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
+        RECTS+= ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
         i+=1
     if args.lgd:
-        LGD = ax.legend([alg for alg in Algorithms], ncol=len(Algorithms),borderaxespad=0.,loc=3, bbox_to_anchor=(0., 1.02, 1., .102),fontsize=15,mode='expand')    
+        LGD = ax.legend(Algorithms, ncol=len(Algorithms),borderaxespad=0.,loc=3, bbox_to_anchor=(0., 1.02, 1., .102),fontsize=15,mode='expand')    
     else:
         LGD = None
-    lbls =  form_vals(DICS[alg])[1]
     
-    ax.set_xticks(ind+width*3) 
-    ax.set_xticklabels(tuple(lbls),fontsize = 16)
-    if args.mode2 == 'OBJ':
-        y_label = args.mode
-    elif args.mode2 == 'TIME':
-        y_label = 'Time'
-    ax.set_ylabel(y_label,fontsize=22)
+    
+    ax.set_xticks(ind) 
+    ax.set_xticklabels(tuple(labels),fontsize = 18)
+    ax.set_ylabel(y_axis_label,fontsize=18)
   #  ax.set_yticklabels([0, 0.5, 1])
     plt.yticks(fontsize = 18)
     plt.xlim([ind[0]-width,ind[-1]+len(Algorithms)*width])
         
     fig_size = plt.rcParams["figure.figsize"]
-    print fig_size
     if args.lgd:
         fig.savefig(outfile+".pdf",format='pdf', bbox_extra_artists=(LGD,), bbox_inches=Bbox(np.array([[0,0],[18,6]])) )
     else:
@@ -102,16 +118,14 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description = 'Generate bar plots comparing different algorithms.',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('filenames', metavar='filename', type=str, nargs='+',
                    help='pickled files to be processed')
+    parser.add_argument('--outfile', type=str, help="File to store the figure.")
     parser.add_argument('--lgd',action='store_true',help='Pass to make a legened.')
     parser.add_argument('--metric',choices=['OBJ','time'], default='OBJ',help='Determine whether to plot gain or cost')
     parser.add_argument('--congestion', type=float, default=0.95, help="Congestion of the network")
     args = parser.parse_args()
     
     
-    title =  "Congestion %.2f" %args.congestion
     DICS = {}
-    for topology in topologies:
-        DICS[topology] = {}
     
 
     for filename in args.filenames:
@@ -120,13 +134,18 @@ if __name__=="__main__":
         with open(filename) as current_file:
             alg_args, trace  = pickle.load(current_file)
         
-            print trace
         trace_lastKey = max(trace.keys() )
-        DICS[topology][Alg] =  trace[trace_lastKey ][args.metric]
+        if Alg not in DICS:
+             DICS[Alg] = {}
+
+        DICS[Alg][topology] =  trace[trace_lastKey ][args.metric]
          
         if args.metric == 'OBJ':
-            DICS[topology][Alg] *= -1
-    print DICS
-                   
+            y_axis_label = 'Objective'
+            DICS[Alg][topology] *= -1
+        else:
+            y_axis_label = 'Time(s)'
+    barPlotter(DICS, args.outfile, y_axis_label)               
+    
 
 

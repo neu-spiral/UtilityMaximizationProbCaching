@@ -17,7 +17,7 @@ colors =['b', 'g', 'r', 'c' ,'m' ,'y' ,'k' ,'w']
 hatches = ['////', '/', '\\', '\\\\', '-', '--', '+', '']
 
 
-Algorithms = ['Barrier', 'Greedy1','Greedy2']
+Algorithms = ['Barrier', 'ConvexRelaxation','Greedy1','Greedy2']
 graph2lbl =  {'erdos_renyi':'ER','special_case':'path','erdos_renyi2':'ER-20Q','hypercube2':'hypercube-20Q'}
     
 topologies = ['balanced_tree','cycle', 'lollipop','erdos_renyi', 'grid_2d','star','hypercube','small_world','barabasi_albert', 'dtelekom','abilene','geant']
@@ -27,6 +27,8 @@ def whichAlg( filename):
         return 'Greedy1'
     elif re.search('Greedy2',  filename ):
         return 'Greedy2'
+    elif re.search('Relaxed', filename):
+        return 'ConvexRelaxation'
     else:
         return 'Barrier' 
 def whichTopology( filename):

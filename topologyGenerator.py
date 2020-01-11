@@ -1417,9 +1417,11 @@ class RelaxedProblem(Problem):
                 #Evaluate gradients 
                 if edge not in grads:
                     grads[edge] = {}
+                #Evaluate Hessian (which is zero!)
+                if edge not in Hessian:
+                    Hessian[edge] = {}
                
                 if current_sum >= 1.0:
-         
                     #In this case the contribution of the current demand to the gradients is zero.
                     continue
                 for var in current_VARS:
@@ -1431,11 +1433,6 @@ class RelaxedProblem(Problem):
                         grads[edge][var] = grad_var
                     else:
                         grads[edge][var] += grad_var
-                if degree <= 1.0:
-                    continue
-                #Evaluate Hessian (which is zero!)
-                if edge not in Hessian:
-                    Hessian[edge] = {} 
         return edge_func, grads, Hessian
                                         
 

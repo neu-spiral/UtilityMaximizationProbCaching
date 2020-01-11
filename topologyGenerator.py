@@ -20,6 +20,7 @@ import pickle
 import topologies
 from SparseVector import SparseVector 
 from helpers import clearFile
+import math
 
 class CONFIG(object):
     QUERY_MESSAGE_LENGTH = 0.0
@@ -1143,7 +1144,7 @@ class Problem:
             item = demand['item']
             maxRate = demand['rate']
             path = tuple(demand['path'])
-            self.REM[(item, path)] = 1.0
+            self.REM[(item, path)] = 0.5
             self.BOX[(item ,path)] = maxRate
             for node in path[:-1]:
                 if (item, node) not in self.VAR:
@@ -1389,10 +1390,54 @@ class Problem:
         with file(fname,'r') as f:
             return pickle.load(f)    
 class RelaxedProblem(Problem):
-    def evalFullConstraintsGrad(self):
-        pass
-        
+    def evalGradandConstraints(self, degree=2):
+        "Evalauate relaxed constraints and their gradients and Hessian."
+        grads = {}
+        Hessian = {}
+        edge_func = {}
+        for demand in self.demands:
+            item = demand['item']
+            maxRate = demand['rate']
+            path = tuple(demand['path']) 
+            current_sum = self.VAR[(item, path)] / maxRate
+            current_VARS = [(item, path)]
+            for i in range(len(path) -1):
+                edge = (path[i],path[i+1])
+                current_VARS.append((item, path[i]))
+                if edge not in edge_func:
+                    edge_func[ edge]  = self.bandwidths[edge] / (1.0 - 1.0 / math.e)
+                edge_func[ edge] -= maxRate / (1.0 - 1.0 / math.e)
+     
+                current_sum += self.VAR[(item, path[i])] 
+                #Evaluate constraints 
+                edge_func[ edge] += maxRate * min(1.0, current_sum)
 
+                if degree <= 0:
+                    continue
+                #Evaluate gradients 
+                if edge not in grads:
+                    grads[edge] = {}
+               
+                if current_sum >= 1.0:
+         
+                    #In this case the contribution of the current demand to the gradients is zero.
+                    continue
+                for var in current_VARS:
+                    if type(var[1]) == tuple:
+                        grad_var = 1.0/maxRate
+                    else:
+                        grad_var = 1.0
+                    if  var not in grads[edge]:
+                        grads[edge][var] = grad_var
+                    else:
+                        grads[edge][var] += grad_var
+                if degree <= 1.0:
+                    continue
+                #Evaluate Hessian (which is zero!)
+                if edge not in Hessian:
+                    Hessian[edge] = {} 
+        return edge_func, grads, Hessian
+                                        
 
 
 def generate_bandwidths_old(edge_dict,demands,V,I,mode='bi'):
@@ -1466,6 +1511,7 @@ def main():
 
    parser = argparse.ArgumentParser(description = 'Simulate a Network of Caches',formatter_class=argparse.ArgumentDefaultsHelpFormatter)
    parser.add_argument('outputfile',help = 'Output file')
+   parser.add_argument('problem_type', choices=['Problem', 'RelaxedProblem'], help='Type of problem')
    parser.add_argument('--logfile',default='generator.log',type=str, help='logfile')
    parser.add_argument('--max_capacity',default=2,type=int, help='Maximum capacity per cache')
    parser.add_argument('--min_capacity',default=2,type=int, help='Minimum capacity per cache')
@@ -1675,15 +1721,16 @@ def main():
 
    logger.info('Building CacheNetwork')
    logger.info('...done')
-   out = args.outputfile+ "_"+args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes" + "_" + str(args.congestion)  + "congestion"
-   pr = Problem(G,capacities,demands,bandwidths)
+   out = args.outputfile+ "_" + args.problem_type + "_" + args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes" + "_" + str(args.congestion)  + "congestion"
+   problem_class  = eval(args.problem_type)
+   pr = problem_class(G,capacities,demands,bandwidths)
    print "The number of variables is ", len(pr.VAR.keys())
    pr.pickle_cls(out)
    
 #   print 'Demands are: ', pr.demands
 #   print 'bandwidths are : ', pr.bandwidths
 #   print 'Capacities are : ', pr.capacities 
-#   print 'Constraint grads are : ', pr.evalGradandConstraints()
+#   print pr.evalGradandConstraints()
 #   print 'Capacity Grads are: ', pr.evalGradandCapcityConstraints()
  #  print 'Full Grads are: ', pr.evalFullConstraintsGrad()
    

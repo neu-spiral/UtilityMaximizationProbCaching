@@ -3,7 +3,7 @@ import logging
 import random
 import math 
 import sys
-from topologyGenerator import Problem 
+from topologyGenerator import Problem, RelaxedProblem
 import numpy as np
 import argparse
 from SparseVector import SparseVector
@@ -520,6 +520,7 @@ if __name__=="__main__":
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
     parser.add_argument('trace_file',help = 'Trace file')
+    parser.add_argument('--problem_type', choices=['Problem', 'RelaxedProblem'], default='Problem',help='Type of problem') 
     parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations') 
     parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
@@ -527,8 +528,10 @@ if __name__=="__main__":
     parser.add_argument('--logLevel',default='INFO', help='Verbosity level',choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'])
     args = parser.parse_args()
 
+
+    problem_class = eval(args.problem_type)
     
-    problem_instance = Problem.unpickle_cls(args.problem) 
+    problem_instance = problem_class.unpickle_cls(args.problem) 
     eps = 1.e-3
        
     #set up logfile

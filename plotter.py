@@ -36,7 +36,7 @@ def whichTopology( filename):
             return topology
     
 
-def barPlotter(DICS, outfile, y_axis_label = 'Objective'):
+def barPlotter(DICS, outfile, y_axis_label = 'Objective', normalize=False):
     def form_vals(DICS_alg):
         out = []
         labels = []
@@ -45,7 +45,7 @@ def barPlotter(DICS, outfile, y_axis_label = 'Objective'):
                 out.append( DICS_alg[topology]  )
                 labels.append(topology)
             except KeyError:
-                print topology
+               # print topology
                 continue 
         return out, labels
         
@@ -55,15 +55,15 @@ def barPlotter(DICS, outfile, y_axis_label = 'Objective'):
 
 
     N = len(DICS[Algorithms[0]].keys()) 
-    numb_bars = len(Algorithms) 
+    numb_bars = len(Algorithms) + 1
     ind = np.arange(0,numb_bars*N ,numb_bars)
-    print ind
     RECTS = []
     i = 0
     for alg in Algorithms:
         values, labels = form_vals(DICS[alg])
+
         print len(ind), len(values), N
-        ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
+    #    ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
         RECTS+= ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
         i+=1
     if args.lgd:
@@ -72,11 +72,12 @@ def barPlotter(DICS, outfile, y_axis_label = 'Objective'):
         LGD = None
     
     
-    ax.set_xticks(ind) 
+    ax.set_xticks(ind + width) 
     ax.set_xticklabels(tuple(labels),fontsize = 18)
     ax.set_ylabel(y_axis_label,fontsize=18)
   #  ax.set_yticklabels([0, 0.5, 1])
     plt.yticks(fontsize = 18)
+    plt.ylim([1,70])
     plt.xlim([ind[0]-width,ind[-1]+len(Algorithms)*width])
         
     fig_size = plt.rcParams["figure.figsize"]
@@ -119,6 +120,7 @@ if __name__=="__main__":
     parser.add_argument('filenames', metavar='filename', type=str, nargs='+',
                    help='pickled files to be processed')
     parser.add_argument('--outfile', type=str, help="File to store the figure.")
+    parser.add_argument('--normalize',action='store_true',help='Pass to normalize the plot.')
     parser.add_argument('--lgd',action='store_true',help='Pass to make a legened.')
     parser.add_argument('--metric',choices=['OBJ','time'], default='OBJ',help='Determine whether to plot gain or cost')
     parser.add_argument('--congestion', type=float, default=0.95, help="Congestion of the network")
@@ -133,19 +135,22 @@ if __name__=="__main__":
         topology = whichTopology(filename)
         with open(filename) as current_file:
             alg_args, trace  = pickle.load(current_file)
-        
         trace_lastKey = max(trace.keys() )
         if Alg not in DICS:
              DICS[Alg] = {}
 
-        DICS[Alg][topology] =  trace[trace_lastKey ][args.metric]
+        try:
+            DICS[Alg][topology] =  trace[trace_lastKey ][args.metric]
+        except KeyError:
+            print filename
+    #        continue
          
         if args.metric == 'OBJ':
             y_axis_label = 'Objective'
             DICS[Alg][topology] *= -1
         else:
             y_axis_label = 'Time(s)'
-    barPlotter(DICS, args.outfile, y_axis_label)               
+    barPlotter(DICS, args.outfile, y_axis_label, args.normalize)               
     
 
 

@@ -12,7 +12,10 @@ def Project2Box(X, U):
             X[key] = L[key]
         elif X[key] > U[key]:
             X[key] = U[key]
-        
+def Proj2PositiveOrthant(X):
+    for key in X:
+       if X[key] < 0:
+           X[key] = 0.0        
 def ProjOperator(X, V, U):
     'The projector operator defined in Eq. (2,9)'
     XminusV = dict( [(key, X[key] - V[key]) for key in X] )

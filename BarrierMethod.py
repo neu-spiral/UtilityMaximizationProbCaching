@@ -3,7 +3,7 @@ import logging
 import random
 import math 
 import sys
-from topologyGenerator import Problem, RelaxedProblem
+from topologyGenerator import Problem
 import numpy as np
 import argparse
 from SparseVector import SparseVector
@@ -21,7 +21,8 @@ class boxOptimizer():
         self.eta  = 0.6
         self.gamma0 = 0.3
         self.gamma1  = 0.7
-        self.gamma2  = 2.0
+        #self.gamma2  = 2.0
+        self.gamma2  = 10.0
         self.nu = 1.0
         self.Delta = 0.5
     def initialPoint(self, Pr, SHIFTS, startFromLast=False):
@@ -133,7 +134,6 @@ class boxOptimizer():
             Pr.VAR += s_k
 
 
-            
             #Evaluet only the objective for the new point
             LAMBDA_BAR, obj_toBeTested, grad_NULL, Hessian_NULL = self.evaluate(Pr, Lambdas, Shifts, 0) 
             #Measure the improvement raio 
@@ -160,10 +160,19 @@ class boxOptimizer():
             if not REJ:
                 LAMBDA_BAR, obj, grad, Hessian = self.evaluate(Pr, Lambdas, Shifts)
            
-            if debug and not REJ:
-                print "s_k is ", s_k
-                print "Var is ", Pr.VAR
-                print "grad is ", grad
+            if debug:
+                print "Iteration ", i
+                print "Thershold ", TrustRegionThreshold
+                print "Grad norm", squaredNorm(grad), " accpted: ", not REJ
+                print "Direction norm ", squaredNorm( s_k)
+                print "Obj improvement is, ", obj - obj_toBeTested
+                print "Quad obj improevment is  ",  -1.0 * s_k.dot(grad) - 0.5 * s_k.dot( s_k.MatMul(Hessian) )
+                print "Improvement ratio", rho_k
+                
+          
+            #     print "s_k is ", s_k
+            #    print "Var is ", Pr.VAR
+            #    print "grad is ", grad
 
             #Stppping criterion 
             
@@ -458,7 +467,7 @@ class BarrierOptimizer():
         #    print "Initail point for iter ", k, " is ", Pr.VAR
          #   if k < OuterIterations-1:
         #    print self.OMEGA
-            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=False, logger=self.logger )
+            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
          #   else:
          #       new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
              
@@ -520,7 +529,6 @@ if __name__=="__main__":
     parser.add_argument('problem',help = 'Caching problem instance filename')
     parser.add_argument('opt_problem',help = 'Optimized caching problem instance filename')
     parser.add_argument('trace_file',help = 'Trace file')
-    parser.add_argument('--problem_type', choices=['Problem', 'RelaxedProblem'], default='Problem',help='Type of problem') 
     parser.add_argument('--innerIterations',default=10,type=int, help='Number of inner iterations') 
     parser.add_argument('--outerIterations',default=1,type=int, help='Number of outer iterations')
     parser.add_argument('--logfile',default='logfile',type=str, help='logfile')
@@ -529,9 +537,8 @@ if __name__=="__main__":
     args = parser.parse_args()
 
 
-    problem_class = eval(args.problem_type)
     
-    problem_instance = problem_class.unpickle_cls(args.problem) 
+    problem_instance = Problem.unpickle_cls(args.problem) 
     eps = 1.e-3
        
     #set up logfile

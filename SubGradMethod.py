@@ -24,12 +24,7 @@ class SubGradOptimizer:
 
     def initialPoint(self):
         for key in self.Pr.VAR:
-            if type(key[1]) == tuple:
-                 #Remainder variables 
-                self.Pr.VAR[key] = self.Pr.BOX[key]
-            else:
-                 #Caching variables 
-                self.Pr.VAR[key] = 0.0
+            self.Pr.VAR[key] = 0.0
     def evaluate(self, degree=1, debug=False):
         """Evalue the Lagrangian function. 
            degree = 0 computes the Lagrangian 
@@ -42,7 +37,6 @@ class SubGradOptimizer:
         #w.r.t. objective 
         obj_func, obj_grads, obj_Hessian = self.Pr.evalGradandUtilities(degree)
       
-
 
         for obj in obj_func:
             #Objective
@@ -72,59 +66,68 @@ class SubGradOptimizer:
                 else:
                     grad_lagrangian[index] = grad_index
         
-
         dual_grad = SparseVector( constraint_func ) * -1.0        
-        return obj_lagrangian, SparseVector(grad_lagrangian), dual_grad, utility
+        feasibility = 1.0 * sum( [dual_grad[key] <= 0.0 for key in dual_grad   ]) /  len(dual_grad.keys())
+        return obj_lagrangian, SparseVector(grad_lagrangian), dual_grad, utility, feasibility
         
     
         
     def Primal(self, iterations=100, eps=1.e-3):
-        obj_lagrangian, grad_lagrangian, dual_grad, utility = self.evaluate()
+        obj_lagrangian, grad_lagrangian, dual_grad, utility, feasibility = self.evaluate()
+        OBJ_k = obj_lagrangian
+        VAR_k = self.Pr.VAR
         for t in range(iterations):
             #Grdianet desecnet 
             self.Pr.VAR -= 1./(t+2) * grad_lagrangian
             #Projection
             Project2Box(self.Pr.VAR, self.Pr.BOX )
             #Evaluate objective and gradient 
-            obj_lagrangian, grad_lagrangian, dual_grad, utility = self.evaluate()
-
-            firstOrderOpt = squaredNorm( ProjOperator(self.Pr.VAR, grad_lagrangian, self.Pr.BOX) )
-            if firstOrderOpt < eps:
-                break
-            self.logger.info("Primal iteration %d, objectve is %.10f, optimlaity %.4f" %(t+1, obj_lagrangian, firstOrderOpt))
+            obj_lagrangian, grad_lagrangian, dual_grad, utility, feasibility = self.evaluate()
+            OBJ_k = min(OBJ_k, obj_lagrangian)
+            if obj_lagrangian <= OBJ_k:
+                VAR_k = self.Pr.VAR
+            self.logger.info("Primal iteration %d, best objectve so far is %.3f, objective is %.3f and %.3f." %(t+1, OBJ_k, obj_lagrangian, feasibility))
             
-        return self.Pr.VAR, dual_grad, obj_lagrangian, utility
+        self.Pr.VAR = VAR_k
+        obj_lagrangian, grad_lagrangian, dual_grad, utility, feasibility = self.evaluate()
+        return dual_grad, obj_lagrangian, utility, feasibility
           
     def solve(self, iterations=100, inner_iterations=100):
-
+        #Evaluate the dual upper bound
+        for var in self.Pr.VAR:
+            self.Pr.VAR[var] = 1.0
+        obj_lagrangian, grad_lagrangian, dual_grad, upper_bound, feasibility = self.evaluate()
         #set initial point to a feasible primal point
         self.initialPoint()
         trace = {}
         t_start = time.time()
-        obj_lagrangian, grad_lagrangian, dual_grad, primal_obj_feasible = self.evaluate()
+        obj_lagrangian, grad_lagrangian, dual_grad, primal_obj_feasible, feasibility = self.evaluate()
         
         for t in range(iterations):
             trace[t] = {}
-            VAR_t, dual_grad, q_t, primal_obj = self.Primal(iterations = inner_iterations)
+            dual_grad, dual_obj, primal_obj, primal_feasibility = self.Primal(iterations = inner_iterations)
             if t == 0:
-                max_q = q_t
+                max_dual = dual_obj
             else:
-                max_q = max(max_q, q_t)
-            q_opt_estimate = .5 * (max_q + primal_obj_feasible)
+                max_dual = max(max_dual, dual_obj)
+            q_opt_estimate = .5 * (max_dual + upper_bound)
             #Set step-size
             alpha_t = self.beta/(self.gamma + t)
-            step_size = alpha_t * (q_opt_estimate - q_t) / ( squaredNorm(dual_grad) ) ** 2
-            print step_size      
+            step_size = alpha_t * (q_opt_estimate - dual_obj) / ( squaredNorm(dual_grad) ) ** 2
             #Aadapt dual variables
             self.LAMBDAS += step_size * dual_grad 
+            
             Proj2PositiveOrthant(self.LAMBDAS)
 
             now = time.time()
             
-            trace[t]['DUALOBJ'] = q_t
+            trace[t]['DUALOBJ'] = max_dual
             trace[t]['OBJ'] = primal_obj
             trace[t]['time'] = now - t_start
-            self.logger.info("Iteration %d, primal objective is %.4f, dual objective is %.4f" %(t, primal_obj, q_t))
+            trace[t]['RelaxedCONSTRAINT'] = primal_feasibility
+            trace[t]['CONSTRAINT'] = self.Pr.evalOriginalConstraints()
+            self.logger.info("Iteration %d, primal objective is %.4f, dual objective is %.4f, constraint satisfation %.4f, original constraint satisfation %.4f" %(t, primal_obj, dual_obj,trace[t]['RelaxedCONSTRAINT'] , trace[t]['CONSTRAINT']))
+
         return trace 
              
           

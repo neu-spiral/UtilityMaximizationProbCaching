@@ -1155,6 +1155,9 @@ class Problem:
         self.log_margin = 1.e-1
 
         
+        
+       
+        
 
     def setVAR2Zero(self):
         for var in self.VAR:
@@ -1426,14 +1429,19 @@ class RelaxedProblem(Problem):
                     continue
                 for var in current_VARS:
                     if type(var[1]) == tuple:
-                        grad_var = 1.0/maxRate
-                    else:
                         grad_var = 1.0
+                    else:
+                        grad_var = maxRate
                     if  var not in grads[edge]:
                         grads[edge][var] = grad_var
                     else:
                         grads[edge][var] += grad_var
         return edge_func, grads, Hessian
+    def evalOriginalConstraints(self):
+        Pr = Problem("",self.capacities,self.demands,self.bandwidths)
+        Pr.VAR = self.VAR
+        util, const_satisfaction_ratio  = Pr.evaluate()
+        return const_satisfaction_ratio
                                         
 
 

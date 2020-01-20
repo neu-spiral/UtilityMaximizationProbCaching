@@ -86,7 +86,8 @@ class SubGradOptimizer:
             OBJ_k = min(OBJ_k, obj_lagrangian)
             if obj_lagrangian <= OBJ_k:
                 VAR_k = self.Pr.VAR
-            self.logger.info("Primal iteration %d, best objectve so far is %.3f, objective is %.3f and %.3f." %(t+1, OBJ_k, obj_lagrangian, feasibility))
+            if t % 50 ==0:
+                self.logger.info("Primal iteration %d, best objectve so far is %.3f, objective is %.3f and %.3f." %(t+1, OBJ_k, obj_lagrangian, feasibility))
             
         self.Pr.VAR = VAR_k
         obj_lagrangian, grad_lagrangian, dual_grad, utility, feasibility = self.evaluate()

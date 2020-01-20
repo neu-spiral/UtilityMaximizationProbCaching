@@ -1679,18 +1679,36 @@ def main():
    
    random.shuffle(items_requested)
 	
+
+   
    demands_per_query_node= args.demand_size // args.query_nodes
    remainder = args.demand_size % args.query_nodes
    demands =[]
 
-   for x in query_node_list:
+
+   allItemsRequested = False
+   itemsRequestedSofar = []
+   for ind, x in enumerate(query_node_list):
       dem = demands_per_query_node
-      if x < remainder:
-	dem = dem+1
-	
-      new_dems = [ Demand(items_requested[pos], shortest_path(G,x,item_sources[   items_requested[pos] ][0],weight='weight'),  args.max_rate)   for pos in range(len(demands),len(demands)+dem)]
-      logging.debug(pp(new_dems))
-      demands = demands + new_dems
+      if ind < remainder:
+	  dem = dem+1
+
+      
+      itemsRequestedSofarforx = []
+      for pos in range(len(demands),len(demands)+dem):
+          requested_item = random.choice( [item for item in range(args.catalog_size) if item not in itemsRequestedSofarforx and item not in itemsRequestedSofar] )            	
+          itemsRequestedSofarforx.append(  requested_item  )
+          itemsRequestedSofar.append(  requested_item  )
+          new_dem = Demand(requested_item, shortest_path(G,x,item_sources[  requested_item ][0],weight='weight'),  args.max_rate) 
+          demands = demands + [new_dem]
+     
+          if len(itemsRequestedSofar) == args.catalog_size:
+              allItemsRequested = True
+          if allItemsRequested:
+              itemsRequestedSofar = []
+     # new_dems = [ Demand(items_requested[pos], shortest_path(G,x,item_sources[   items_requested[pos] ][0],weight='weight'),  args.max_rate)   for pos in range(len(demands),len(demands)+dem)]
+     # logging.debug(pp(new_dems))
+      #demands = demands + new_dems
    
    Demand_list =[]
    for demand in demands:
@@ -1705,6 +1723,7 @@ def main():
    fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
    logger.addHandler(fh)
 
+  
    logger.info('...done. Generated %d demands'%len(demands))
    #plt.hist([ d.item for d in demands], bins=np.arange(args.catalog_size)+0.5)
    #plt.show()
@@ -1729,7 +1748,7 @@ def main():
    out = args.outputfile+ "_" + args.problem_type + "_" + args.graph_type +"_"+str(args.demand_size) +"demands_"+ str(args.catalog_size)+"catalog_size_"+"mincap_"+str(args.min_capacity)+"maxcap_"+str(args.max_capacity)+"_"+str(args.graph_size)+"_"+str(args.demand_distribution)+"_"+"rate"+str(args.max_rate) +"_"+ str(args.query_nodes) + "qnodes" + "_" + str(args.congestion)  + "congestion"
    problem_class  = eval(args.problem_type)
    pr = problem_class(G,capacities,demands,bandwidths)
-   print "The number of variables is ", len(pr.VAR.keys())
+   print "The number of variables is ", len(pr.VAR.keys()), " Number of rates ", sum([type(var[1]) == tuple for var in pr.VAR])
    pr.pickle_cls(out)
    
 #   print 'Demands are: ', pr.demands

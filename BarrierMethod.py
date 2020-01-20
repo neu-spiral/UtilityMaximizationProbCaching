@@ -467,7 +467,7 @@ class BarrierOptimizer():
         #    print "Initail point for iter ", k, " is ", Pr.VAR
          #   if k < OuterIterations-1:
         #    print self.OMEGA
-            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
+            new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=False, logger=self.logger )
          #   else:
          #       new_LAMBDA_BAR, non_optimality_norm = self.innerSolver.optimizer(Pr, self.LAMBDAS, self.SHIFTS, self.OMEGA, InnerIterations, debug=True, logger=self.logger )
              
@@ -555,6 +555,7 @@ if __name__=="__main__":
     trace = optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations, debugLevel=args.debug_level)
     problem_instance.pickle_cls( args.opt_problem )
     
+    print sum( [type(var[1]) == tuple for var in problem_instance.VAR] )
     with open(args.trace_file,'wb') as f:
         pickle.dump((args,trace),f)
     

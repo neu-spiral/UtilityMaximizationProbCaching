@@ -361,10 +361,11 @@ class BarrierOptimizer():
         self.beta_omega = initVal
         self.beta_eta = 0.25
         self.alpha_lambda = 1.0
-        self.tau = 0.75
+        #self.tau = 0.75
+        self.tau = 0.95
         self.rho = 0.5
-        self.omega_star = 1.e-3
-        self.eta_star = 1.e-3
+        self.omega_star = 1.e-4
+        self.eta_star = 1.e-4
         self.alpha_eta = 1.1 - 1./(1+ self.alpha_lambda)
         self.MU = initVal
         self.OMEGA  = self.omega_s * self.MU**self.alpha_omega 
@@ -555,7 +556,6 @@ if __name__=="__main__":
     trace = optimizer.outerIter(problem_instance, OuterIterations=args.outerIterations, InnerIterations=args.innerIterations, debugLevel=args.debug_level)
     problem_instance.pickle_cls( args.opt_problem )
     
-    print sum( [type(var[1]) == tuple for var in problem_instance.VAR] )
     with open(args.trace_file,'wb') as f:
         pickle.dump((args,trace),f)
     

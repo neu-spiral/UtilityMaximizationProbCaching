@@ -15,9 +15,10 @@ import datetime
 
 colors =['b', 'g', 'r', 'c' ,'m' ,'y' ,'k' ,'w']
 hatches = ['////', '/', '\\', '\\\\', '-', '--', '+', '']
+lin_styles = ['b^--','g*-','r^--','c*-','m^--','y-']
 
 
-Algorithms = ['Barrier', 'ConvexRelaxation','Greedy1','Greedy2']
+Algorithms = ['LBSB', 'ConvexRelaxation','Greedy1','Greedy2']
 graph2lbl =  {'erdos_renyi':'ER','special_case':'path','erdos_renyi2':'ER-20Q','hypercube2':'hypercube-20Q'}
     
 topologies = ['balanced_tree','cycle', 'lollipop','erdos_renyi', 'grid_2d','star','hypercube','small_world','barabasi_albert', 'dtelekom','abilene','geant']
@@ -30,46 +31,42 @@ def whichAlg( filename):
     elif re.search('Relaxed', filename):
         return 'ConvexRelaxation'
     else:
-        return 'Barrier' 
+        return 'LBSB' 
 def whichTopology( filename):
     "Find filename corresponds to which topology."
     for topology in topologies:
         if re.search(topology, filename):
             return topology
     
+def whichCongestion( filename):
+    for congestion in ['0.95', '0.85', '0.8', '0.7', '0.6', '0.5', '1.0']:
+        if re.search(congestion, filename):
+            return congestion
 
 def barPlotter(DICS, outfile, y_axis_label = 'Objective', normalize=False):
-    def form_vals(DICS_alg):
-        out = []
-        labels = []
-        for topology in topologies:
-            try:
-                out.append( DICS_alg[topology]  )
-                labels.append(topology)
-            except KeyError:
-               # print topology
-                continue 
+    def formVals(DICS_alg):
+        out = [DICS_alg[key] for key in sorted(DICS_alg.keys() )]
+        labels =  sorted(DICS_alg.keys() )
         return out, labels
-        
     fig, ax = plt.subplots()
-    fig.set_size_inches(18, 6)
+    fig.set_size_inches(20, 8)
     width = 1
 
 
-    N = len(DICS[Algorithms[0]].keys()) 
-    numb_bars = len(Algorithms) + 1
+    N = len(DICS[DICS.keys()[0]].keys()) 
+    numb_bars = len(DICS.keys() ) + 1
     ind = np.arange(0,numb_bars*N ,numb_bars)
     RECTS = []
     i = 0
-    for alg in Algorithms:
-        values, labels = form_vals(DICS[alg])
 
-        print len(ind), len(values), N
+    for key  in Algorithms:
+        values, labels = formVals(DICS[key])
+        print values,  key
     #    ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
-        RECTS+= ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
+        RECTS+= ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=key,log=True)
         i+=1
     if args.lgd:
-        LGD = ax.legend(Algorithms, ncol=len(Algorithms),borderaxespad=0.,loc=3, bbox_to_anchor=(0., 1.02, 1., .102),fontsize=15,mode='expand')    
+        LGD = ax.legend(Algorithms, ncol=len(DICS.keys() ), borderaxespad=0.,loc=3, bbox_to_anchor=(0., 1.02, 1., .102),fontsize=15,mode='expand')    
     else:
         LGD = None
     
@@ -77,17 +74,45 @@ def barPlotter(DICS, outfile, y_axis_label = 'Objective', normalize=False):
     ax.set_xticks(ind + width) 
     ax.set_xticklabels(tuple(labels),fontsize = 18)
     ax.set_ylabel(y_axis_label,fontsize=18)
-  #  ax.set_yticklabels([0, 0.5, 1])
+    ax.set_yticklabels([0, 0.5, 1])
     plt.yticks(fontsize = 18)
-    plt.ylim([1,70])
-    plt.xlim([ind[0]-width,ind[-1]+len(Algorithms)*width])
+   # plt.ylim([0.1,])
+    plt.xlim([ind[0]-width,ind[-1]+len(DICS.keys() )*width])
         
     fig_size = plt.rcParams["figure.figsize"]
     if args.lgd:
-        fig.savefig(outfile+".pdf",format='pdf', bbox_extra_artists=(LGD,), bbox_inches=Bbox(np.array([[0,0],[18,6]])) )
+        fig.savefig(outfile+".pdf",format='pdf', bbox_extra_artists=(LGD,), bbox_inches=Bbox(np.array([[0,0],[20,8]])) )
     else:
         fig.savefig(outfile+".pdf",format='pdf', bbox_inches=Bbox(np.array([[0,0],[18,6]])) )
     plt.show()    
+
+def linePlotter(DICS, outfile, yaxis_label='Objective'):
+    def formVals(DICS_alg):
+        vals = []
+        x_axis = []
+        for key in sorted( [eval(val) for val in DICS_alg.keys()] ):
+            vals.append( DICS_alg[str(key)]  )
+            x_axis.append(key )
+        return vals, x_axis
+    fig, ax = plt.subplots()
+    fig.set_size_inches(8, 6)
+    i=0
+    for alg in Algorithms:
+        vals, x_axis = formVals(DICS[alg]) 
+        plt.plot(x_axis, vals, lin_styles[i], label=alg, linewidth=3)
+        i += 1
+    plt.xlabel('Looseness Coefficient',fontsize = 18)
+    plt.ylabel(yaxis_label, fontsize = 18)
+    plt.xticks(fontsize = 18)
+    plt.yticks(fontsize = 15)
+
+    lgd = plt.legend( loc='lower right',bbox_to_anchor=(1,0),ncol=1,borderaxespad=0.,fontsize= 12)
+
+  #  plt.xlim(0.5,1.1)
+    plt.yscale('linear')
+
+    fig.savefig(outfile+'.pdf',  bbox_extra_artists=(lgd,), format='pdf', bbox_inches=Bbox(np.array([[0,0],[8,6]])) )
+
 def read_file(fname,normalize=0):
     f = open(fname,'r')
     l= eval(f.readline())
@@ -125,7 +150,7 @@ if __name__=="__main__":
     parser.add_argument('--normalize',action='store_true',help='Pass to normalize the plot.')
     parser.add_argument('--lgd',action='store_true',help='Pass to make a legened.')
     parser.add_argument('--metric',choices=['OBJ','time'], default='OBJ',help='Determine whether to plot gain or cost')
-    parser.add_argument('--congestion', type=float, default=0.95, help="Congestion of the network")
+    parser.add_argument('--plot_type', choices=['bar', 'line'], default='bar')
     args = parser.parse_args()
     
     
@@ -134,7 +159,11 @@ if __name__=="__main__":
 
     for filename in args.filenames:
         Alg  = whichAlg(filename)
-        topology = whichTopology(filename)
+        if args.plot_type == 'bar':
+            Key = whichTopology(filename)
+        else:
+            Key = whichCongestion(filename)
+       
         with open(filename) as current_file:
             alg_args, trace  = pickle.load(current_file)
         trace_lastKey = max(trace.keys() )
@@ -142,17 +171,20 @@ if __name__=="__main__":
              DICS[Alg] = {}
 
         try:
-            DICS[Alg][topology] =  trace[trace_lastKey ][args.metric]
+            DICS[Alg][Key] =  trace[trace_lastKey ][args.metric]
         except KeyError:
             print filename
     #        continue
          
         if args.metric == 'OBJ':
             y_axis_label = 'Objective'
-            DICS[Alg][topology] *= -1
+            DICS[Alg][Key] *= -1
         else:
             y_axis_label = 'Time(s)'
-    barPlotter(DICS, args.outfile, y_axis_label, args.normalize)               
+    if args.plot_type == 'bar':
+        barPlotter(DICS, args.outfile, y_axis_label, args.normalize)               
+    else:
+        linePlotter(DICS, args.outfile, y_axis_label)
     
 
 

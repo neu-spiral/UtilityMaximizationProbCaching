@@ -19,5 +19,5 @@ L_95=`ls traces_kept/*.95con*`
 #echo $L_95
 
 
-files=`ls traces/*lolli*`
-python plotter.py $files  --outfile plots/lollipop_congestion  --lgd  --plot_type line
+files=`ls traces/*abile*`
+python plotter.py $files  --outfile plots/abilene_congestion  --lgd  --plot_type line

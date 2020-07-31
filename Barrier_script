@@ -1,0 +1,20 @@
+#! /bin/bash
+
+
+#SBATCH --nodes=1
+#SBATCH --tasks=1
+#SBATCH --output=slurm-logs/Barrier%j.out
+#SBATCH --error=slurm-logs/Barrier%j.err
+
+
+input=data/$1
+output=data/$1"_OPT"
+traceFile=traces/$1
+logfile=logfiles/$1".log"
+innerIterations=100000
+outerIterations=100
+
+module load anaconda2/2.7
+
+python BarrierMethod.py   $input   $output  $traceFile  --innerIterations $innerIterations   --outerIterations $outerIterations --logfile $logfile 
+

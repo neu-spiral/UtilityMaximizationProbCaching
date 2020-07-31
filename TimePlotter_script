@@ -1,0 +1,24 @@
+#! /bin/bash
+
+
+
+
+
+L=`ls traces_kept/*100demands*.8*`
+L2=`ls traces_kept/*125demands*.8*`
+L3=`ls traces/*450dem*_6*.85con*`
+#L4=`ls traces_kept/*erdos*.9congestion*`
+L5=`ls traces_kept/network_*Problem_abilene_40demands_10catalog_size_mincap_2maxcap_2_100_powerlaw_rate1.0_4qnodes_0.8congestion*`
+
+
+L_85=`ls traces_kept/*.85con*`
+L_95=`ls traces_kept/*.95con*`
+#echo $L_95
+
+
+#files=$L" "$L2" "$L3" "$L5
+files=$L_85
+#files=$L_95
+
+
+python plotter_time.py $files  --outfile plots/85_times  --lgd  --plot_type line

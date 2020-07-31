@@ -1,0 +1,19 @@
+#! /bin/bash
+
+
+#SBATCH --nodes=1
+#SBATCH --job-name=Greedy
+#SBATCH --tasks=1
+#SBATCH --output=slurm-logs/Greedy%j.out
+#SBATCH --error=slurm-logs/Greedy%j.err
+
+
+input=data/$1
+output=data/$1
+logfile=logfiles/$1
+
+method=$2
+trace=traces/$1$method
+srun python Greedy.py   $input   $output"_"$method   $trace  $method    --logfile $logfile"_"$method".log"
+  
+

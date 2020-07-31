@@ -1,0 +1,23 @@
+#! /bin/bash
+
+#SBATCH --nodes=1
+#SBATCH --job-name=Barrier
+#SBATCH --tasks=1
+#SBATCH --output=slurm-logs/Barrier%j.out
+#SBATCH --error=slurm-logs/Barrier%j.err
+
+
+module load anaconda2/2.7
+
+
+relaxed=false
+for network in $(ls data/network_Problem*dtel*0.85congestion| awk -F'/' '{print $2}')
+do
+    if [ "$relaxed" = false ]; then
+        echo Runnig Barrier for $network
+       sbatch -p ioannidis  --constraint E5-2680v2@2.80GHz --mem 500M --job-name 85S  Barrier_script $network
+    else
+        echo Runnig RelaxedBarrier for $network
+       sbatch   -p ioannidis   --constraint E5-2680v2@2.80GHz   --mem 500M  --job-name 85S  SubGrad_script  $network
+    fi
+done

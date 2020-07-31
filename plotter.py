@@ -15,13 +15,14 @@ import datetime
 
 colors =['b', 'g', 'r', 'c' ,'m' ,'y' ,'k' ,'w']
 hatches = ['////', '/', '\\', '\\\\', '-', '--', '+', '']
-lin_styles = ['b^--','g*-','r^--','c*-','m^--','y-']
+lin_styles = ['b^-','g*--','rD--','cX-','m*--','y-']
 
 
-Algorithms = ['LBSB', 'ConvexRelaxation','Greedy1','Greedy2']
+Algorithms = ['LBSB', 'CR','Greedy1','Greedy2']
 graph2lbl =  {'erdos_renyi':'ER','special_case':'path','erdos_renyi2':'ER-20Q','hypercube2':'hypercube-20Q'}
     
-topologies = ['balanced_tree','cycle', 'lollipop','erdos_renyi', 'grid_2d','star','hypercube','small_world','barabasi_albert', 'dtelekom','abilene','geant']
+topologies = ['cycle', 'lollipop','geant', 'abilene','dtelekom', 'balanced_tree','grid_2d', 'hypercube','small_world','erdos_renyi']
+
 def whichAlg( filename):
     "Find filename corresponds to which algrotihm."
     if re.search('Greedy1',  filename ):
@@ -29,7 +30,7 @@ def whichAlg( filename):
     elif re.search('Greedy2',  filename ):
         return 'Greedy2'
     elif re.search('Relaxed', filename):
-        return 'ConvexRelaxation'
+        return 'CR'
     else:
         return 'LBSB' 
 def whichTopology( filename):
@@ -45,11 +46,11 @@ def whichCongestion( filename):
 
 def barPlotter(DICS, outfile, y_axis_label = 'Objective', normalize=False):
     def formVals(DICS_alg):
-        out = [DICS_alg[key] for key in sorted(DICS_alg.keys() )]
-        labels =  sorted(DICS_alg.keys() )
+        out = [DICS_alg[key] for key in topologies]
+        labels =  topologies
         return out, labels
     fig, ax = plt.subplots()
-    fig.set_size_inches(20, 8)
+    fig.set_size_inches(20, 4)
     width = 1
 
 
@@ -59,34 +60,43 @@ def barPlotter(DICS, outfile, y_axis_label = 'Objective', normalize=False):
     RECTS = []
     i = 0
 
+
+    if args.normalize:
+        plt.ylim([0,1.1])
+        y_axis_label = "Normalized " + y_axis_label
+        LOGBAR = False
+    else:
+        plt.ylim([0.1, 50])
+        LOGBAR = True
+
     for key  in Algorithms:
         values, labels = formVals(DICS[key])
         print values,  key
     #    ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=alg,log=True)
-        RECTS+= ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=key,log=True)
+        RECTS+= ax.bar(ind+i*width, values, align='center',width=width, color = colors[i], hatch = hatches[i],label=key,log=LOGBAR)
         i+=1
     if args.lgd:
         LGD = ax.legend(Algorithms, ncol=len(DICS.keys() ), borderaxespad=0.,loc=3, bbox_to_anchor=(0., 1.02, 1., .102),fontsize=15,mode='expand')    
     else:
         LGD = None
     
-    
+    print labels 
     ax.set_xticks(ind + width) 
     ax.set_xticklabels(tuple(labels),fontsize = 18)
     ax.set_ylabel(y_axis_label,fontsize=18)
-    ax.set_yticklabels([0, 0.5, 1])
+  #  ax.set_yticklabels([0, 0.5, 1])
     plt.yticks(fontsize = 18)
-   # plt.ylim([0.1,])
     plt.xlim([ind[0]-width,ind[-1]+len(DICS.keys() )*width])
         
     fig_size = plt.rcParams["figure.figsize"]
     if args.lgd:
-        fig.savefig(outfile+".pdf",format='pdf', bbox_extra_artists=(LGD,), bbox_inches=Bbox(np.array([[0,0],[20,8]])) )
+       # fig.savefig(outfile+".pdf",format='pdf', bbox_extra_artists=(LGD,), bbox_inches=Bbox(np.array([[0,0],[20,8]])) )
+        fig.savefig(outfile+".pdf",format='pdf', bbox_inches='tight')
     else:
-        fig.savefig(outfile+".pdf",format='pdf', bbox_inches=Bbox(np.array([[0,0],[18,6]])) )
+        fig.savefig(outfile+".pdf",format='pdf', bbox_inches='tight' )
     plt.show()    
 
-def linePlotter(DICS, outfile, yaxis_label='Objective'):
+def linePlotter(DICS, outfile, yaxis_label='Objective', xaxis_label='Looseness coefficient $\kappa$', x_scale='linear', y_scale='linear'):
     def formVals(DICS_alg):
         vals = []
         x_axis = []
@@ -99,20 +109,64 @@ def linePlotter(DICS, outfile, yaxis_label='Objective'):
     i=0
     for alg in Algorithms:
         vals, x_axis = formVals(DICS[alg]) 
-        plt.plot(x_axis, vals, lin_styles[i], label=alg, linewidth=3)
+        plt.plot(x_axis, vals, lin_styles[i], label=alg, linewidth=3, markersize=18)
         i += 1
-    plt.xlabel('Looseness Coefficient',fontsize = 18)
+    plt.xlabel(xaxis_label,fontsize = 18)
     plt.ylabel(yaxis_label, fontsize = 18)
     plt.xticks(fontsize = 18)
-    plt.yticks(fontsize = 15)
+    plt.yticks(fontsize = 16)
 
-    lgd = plt.legend( loc='lower right',bbox_to_anchor=(1,0),ncol=1,borderaxespad=0.,fontsize= 12)
+    lgd = plt.legend( loc='upper left',bbox_to_anchor=(0,1),ncol=1,borderaxespad=0.,fontsize= 16)
 
   #  plt.xlim(0.5,1.1)
-    plt.yscale('linear')
+    plt.xscale(x_scale)
+    plt.yscale(y_scale )
 
-    fig.savefig(outfile+'.pdf',  bbox_extra_artists=(lgd,), format='pdf', bbox_inches=Bbox(np.array([[0,0],[8,6]])) )
 
+    fig.savefig(outfile+'.pdf',  bbox_extra_artists=(lgd,), format='pdf', bbox_inches='tight' )
+
+def doubleAxeslinePlotter(DIC, outfile, yaxis_label='Objective', y2axis_label='Satisfied Constraints Ratio', xaxis_label='Time (s)', x_scale='linear', y_scale='linear'):
+    def formVals(DIC_alg):
+        vals = []
+        vals2 = []
+        x_axis = []
+        for key in sorted( [eval(val) for val in DIC_alg.keys()] ):
+            print key
+            vals.append( DIC_alg[str(key)][0]  )
+            vals2.append( DIC_alg[str(key)][1]  )
+            x_axis.append(key )
+        return vals, vals2, x_axis
+    fig, ax = plt.subplots()
+
+    ax2 = ax.twinx()
+
+   # fig.set_size_inches(8, 6)
+    i=0
+    vals, vals2, x_axis = formVals(DIC)
+    ax.plot(x_axis, vals, lin_styles[i], label=yaxis_label, linewidth=3, markevery=1, markersize=18)
+    ax2.plot(x_axis, vals2, lin_styles[i+1], label=y2axis_label,  linewidth=3, markevery=1, markersize=18)
+    
+    ax.set_xlabel(xaxis_label,fontsize = 16)
+    ax.set_ylabel(yaxis_label, fontsize = 16)
+    ax2.set_ylabel(y2axis_label, fontsize = 16)
+
+    ax.tick_params(axis="y", labelsize=14)
+    ax2.tick_params(axis="y", labelsize=14)
+
+    plt.xticks(fontsize = 18)
+
+    lgd = ax.legend( loc='upper left',bbox_to_anchor=(0.1, 1),ncol=1,borderaxespad=0.,fontsize= 14)
+    lgd2 = ax2.legend( loc='upper left',bbox_to_anchor=(0.1,0.9),ncol=1,borderaxespad=0.,fontsize= 14)
+    lgd.get_frame().set_edgecolor('w')
+    lgd2.get_frame().set_edgecolor('w')
+
+  #  plt.xlim(0.5,1.1)
+    ax.set_xscale(x_scale)
+    ax.set_yscale(y_scale )
+    ax2.set_yscale(y_scale)
+
+
+    fig.savefig(outfile+'.pdf', bbox_extra_artists=(lgd,lgd2), format='pdf', bbox_inches='tight' )
 def read_file(fname,normalize=0):
     f = open(fname,'r')
     l= eval(f.readline())
@@ -156,7 +210,7 @@ if __name__=="__main__":
     
     DICS = {}
     
-
+    max_dict = {}
     for filename in args.filenames:
         Alg  = whichAlg(filename)
         if args.plot_type == 'bar':
@@ -179,10 +233,20 @@ if __name__=="__main__":
         if args.metric == 'OBJ':
             y_axis_label = 'Objective'
             DICS[Alg][Key] *= -1
+            if args.normalize and Alg == 'LBSB':
+                max_dict[Key] = DICS[Alg][Key]
         else:
             y_axis_label = 'Time(s)'
+
+    #Normalize
+    if args.normalize:
+        for alg in DICS:
+            for Key in DICS[alg]:
+                print DICS[alg][Key], alg, Key
+                DICS[alg][Key] /= max_dict[Key]
+                print DICS[alg][Key] 
     if args.plot_type == 'bar':
-        barPlotter(DICS, args.outfile, y_axis_label, args.normalize)               
+        barPlotter(DICS, args.outfile, y_axis_label)               
     else:
         linePlotter(DICS, args.outfile, y_axis_label)
     

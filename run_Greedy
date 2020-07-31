@@ -1,0 +1,20 @@
+#! /bin/bash
+
+#SBATCH --nodes=1
+#SBATCH --job-name=Greedy
+#SBATCH --tasks=1
+#SBATCH --output=slurm-logs/Greedy%j.out
+#SBATCH --error=slurm-logs/greedy%j.err
+
+
+module load anaconda2/2.7
+
+for network in $(ls data/network_Problem*dtel*0.85congestion| awk -F'/' '{print $2}')
+do
+   echo Runnig Greedy1 and Greedy2 for $network
+   sbatch -p ioannidis  --mem 500M  --constraint E5-2680v2@2.80GHz  Greedy_script $network  Greedy2
+   sbatch -p ioannidis  --mem 500M  --constraint E5-2680v2@2.80GHz  Greedy_script $network  Greedy1
+done
+
+
+

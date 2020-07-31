@@ -1,0 +1,21 @@
+#! /bin/bash
+
+
+#SBATCH --nodes=1
+#SBATCH --job-name=SubGrad
+#SBATCH --tasks=1
+#SBATCH --output=slurm-logs/Barrier%j.out
+#SBATCH --error=slurm-logs/Barrier%j.err
+
+
+input=data/$1
+output=data/$1"_OPT"
+traceFile=traces/$1
+logfile=logfiles/$1".log"
+innerIterations=200
+outerIterations=500
+
+module load anaconda2/2.7
+
+python SubGradMethod.py   $input   $output  $traceFile  --innerIterations $innerIterations   --outerIterations $outerIterations --logfile $logfile  
+

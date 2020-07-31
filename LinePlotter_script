@@ -1,0 +1,23 @@
+#! /bin/bash
+
+
+#SBATCH --nodes=1
+#SBATCH --job-name=Barrier
+#SBATCH --tasks=1
+#SBATCH --output=slurm-logs/Barrier%j.out
+#SBATCH --error=slurm-logs/Barrier%j.err
+
+
+
+
+
+L=`ls traces_kept/*100demands*.8*`
+L2=`ls traces_kept/*125demands*.8*`
+L3=`ls traces_kept/*450demands*.9con*`
+L5=`ls traces_kept/network_*Problem_abilene_40demands_10catalog_size_mincap_2maxcap_2_100_powerlaw_rate1.0_4qnodes_0.8congestion*`
+L_95=`ls traces_kept/*.95con*`
+#echo $L_95
+
+
+files=`ls traces/*lolli*`
+python plotter.py $files  --outfile plots/lollipop_congestion  --lgd  --plot_type line
